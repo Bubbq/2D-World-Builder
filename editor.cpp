@@ -23,13 +23,15 @@ const float SCALE = 2.0f;
 const int SCREEN_TILE_SIZE = TILE_SIZE * SCALE;
 int DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
 
+int mpx, mpy = 0;
+
 enum Element{
 	WALL = 0,
 	FLOOR = 1,
 	DOOR = 2,
 	BUFF = 3,
 	INTERACTABLE = 4,
-	UNDF = 5,
+	SPAWN = 5,
 };
 
 struct Tile
@@ -46,7 +48,7 @@ std::vector<Tile> floors;
 std::vector<Tile> doors;
 std::vector<Tile> buffs;
 std::vector<Tile> interactables;
-
+Vector2 spawn;
 // mouse position relative to the 2d camera object 
 Vector2 mp = { 0 };
 
@@ -74,6 +76,19 @@ void saveLayer(std::vector<Tile>& layer, std::string filePath)
 
 void loadLayers(std::string filePath, Rectangle& worldArea)
 {
+	std::ifstream file("spawn.txt");
+	if(!file)
+	{
+		std::cerr << "NO SPAWN POINT SAVED 'n";
+	}
+
+	float spx, spy;
+	file >> spx >> spy;
+	std::cout << spx <<  " " << spy << std::endl;
+
+	spawn = {spx, spy};
+	file.close();
+
     std::ifstream inFile(filePath);
 	if(!inFile)
 	{
@@ -149,6 +164,10 @@ void deinit(Texture2D texture, std::vector<Tile>& tile_dict)
 		UnloadTexture(tile_dict[i].tx);
 	}
 	
+	std::ofstream outFile("spawn.txt");
+	outFile  << spawn.x << " " << spawn.y << std::endl;
+	outFile.close();
+
 	tile_dict.clear();
 
     UnloadTexture(texture);
@@ -239,10 +258,6 @@ void tileSelection(std::vector<Tile>& tile_dict, Rectangle side_panel, Tile& cur
 // to edit a specific layer by tile creation and/or deletion
 void editLayer(std::vector<Tile>& layer, Tile& currTile, Rectangle& worldArea)
 {
-	// snap mouse position to nearest tile by making it divisble by the screen tile size
-	int mpx = (((int)mp.x >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
-    int mpy = (((int)mp.y >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
-
 	// creation
 	if(CheckCollisionPointRec(mp, worldArea))
 	{
@@ -286,10 +301,6 @@ void drawLayer(std::vector<Tile>& layer, Color color, Rectangle worldArea, const
 
 void editWorld(Rectangle worldArea, Tile& currTile, int ce)
 {
-	// snap mouse position to nearest tile by making it divisble by the screen tile size
-	int mpx = (((int)mp.x >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
-    int mpy = (((int)mp.y >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
-	
 	// edit corresp layer based on layer selection  
 	switch (ce)
 	{
@@ -303,6 +314,15 @@ void editWorld(Rectangle worldArea, Tile& currTile, int ce)
 			editLayer(buffs, currTile, worldArea); break;
 		case INTERACTABLE: 
 			editLayer(interactables, currTile, worldArea); break;
+		case SPAWN:
+			if(CheckCollisionPointRec(mp, worldArea))
+			{
+				if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+				{
+					spawn = {float(mpx), float(mpy)};
+				}
+			}
+			break;
 		default:
 			break;
 	}
@@ -355,7 +375,7 @@ int main()
 	Rectangle layer_panel = {GetScreenWidth() - TILE_SIZE - SCREEN_TILE_SIZE * 5.0f, float(SCREEN_TILE_SIZE), SCREEN_TILE_SIZE * 5.0f, SCREEN_TILE_SIZE * 7.0f};
 	Rectangle edit_map_panel = {GetScreenWidth() - TILE_SIZE - SCREEN_TILE_SIZE * 5.0f, layer_panel.y + layer_panel.height + SCREEN_TILE_SIZE, SCREEN_TILE_SIZE * 5.0f, SCREEN_TILE_SIZE * 5.0f};
 	// current layer user selects
-	int cl = 5;
+	int cl = 6;
 	// flag to show input box to name txt file
 	bool showTextInputBox = false;
 	char textInput [256];
@@ -372,6 +392,9 @@ int main()
         mp = GetScreenToWorld2D(GetMousePosition(), camera);
         camera.offset = GetMousePosition();
         camera.target = mp;
+		// snap mouse position to nearest tile by making it divisble by the screen tile size
+		mpx = (((int)mp.x >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
+   	 	mpy = (((int)mp.y >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
 
 		if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
         {
@@ -409,7 +432,7 @@ int main()
 				
 				DrawRectangleLines(worldArea.x, worldArea.y, worldArea.width, worldArea.height, GRAY);
 				editWorld(worldArea, currTile, (Element)cl);
-				
+				DrawText("S", spawn.x + SCREEN_TILE_SIZE, spawn.y + TILE_SIZE, 5, BLACK);
 				// draw each layer, dont show tile descriptor if in "player mode"
 				drawLayer(floors, RED, worldArea, "F");
 				drawLayer(buffs, YELLOW, worldArea, "B");
@@ -418,12 +441,12 @@ int main()
 				drawLayer(walls, BLUE, worldArea, "W");
 				
 			EndMode2D();
-
+		
 			tileSelection(tile_dict, side_panel, currTile);
 			updateMapSize(worldArea, edit_map_panel);
 			// showing layers
 			GuiPanel(layer_panel, "LAYER TO EDIT");
-			GuiToggleGroup((Rectangle){ GetScreenWidth() - SCREEN_TILE_SIZE * 5.0f, float(SCREEN_TILE_SIZE + PANEL_HEIGHT + TILE_SIZE), SCREEN_TILE_SIZE * 4.0f, 24}, "WALLS \n FLOORS \n DOORS \n BUFFS \n INTERACTABLES \n PLAYER VIEW", &cl);
+			GuiToggleGroup((Rectangle){ GetScreenWidth() - SCREEN_TILE_SIZE * 5.0f, float(SCREEN_TILE_SIZE + PANEL_HEIGHT + TILE_SIZE), SCREEN_TILE_SIZE * 4.0f, 24}, "WALLS \n FLOORS \n DOORS \n BUFFS \n INTERACTABLES \n SPAWN POINT", &cl);
             
 
             // only focus on the window choosing your file
@@ -457,7 +480,7 @@ int main()
 						saveLayer(doors, std::string(textInput) + ".txt");
 						saveLayer(buffs, std::string(textInput) + ".txt");
 						saveLayer(interactables, std::string(textInput) + ".txt");
-						cl = 5;
+						cl = 6;
 					}
                 }
 				
