@@ -1,11 +1,10 @@
-#include "raylib.h"
-#include <cstdlib>
 #include <iostream>
-#include <raymath.h>
-#include <sstream>
+#include <fstream>
 #include <string>
 #include <vector>
-#include <fstream>
+#include "raylib.h"
+#include <raymath.h>
+#include "headers/generation.h"
 
 #define RAYGUI_IMPLEMENTATION
 #include "headers/raygui.h"
@@ -18,144 +17,14 @@ const int SCREEN_WIDTH = 1120;
 const int SCREEN_HEIGHT = 992;
 const int PANEL_HEIGHT = 24;
 
-const int TILE_SIZE = 16;
-const float SCALE = 2.0f;
-const int SCREEN_TILE_SIZE = TILE_SIZE * SCALE;
-int DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
-
 int mpx, mpy = 0;
 
-enum Element{
-	WALL = 0,
-	FLOOR = 1,
-	DOOR = 2,
-	BUFF = 3,
-	INTERACTABLE = 4,
-	SPAWN = 5,
-};
+World world;
 
-struct Tile
-{
-	Vector2 src;
-	Vector2 sp;
-	Texture2D tx;
-	std::string fp;
-	Element tt;
-};
+Vector2 spawn = { -999, -999};
 
-std::vector<Tile> walls;
-std::vector<Tile> floors;
-std::vector<Tile> doors;
-std::vector<Tile> buffs;
-std::vector<Tile> interactables;
-Vector2 spawn;
 // mouse position relative to the 2d camera object 
 Vector2 mp = { 0 };
-
-void saveLayer(std::vector<Tile>& layer, std::string filePath)
-{
-	std::ofstream outFile(filePath, std::ios::app);
-	if(!outFile)
-	{
-		std::cerr << "ERROR SAVING LEVEL \n";
-		return;
-	}
-
-	for(int i = 0; i < layer.size(); i++)
-	{
-		outFile << layer[i].src.x << ","
-		 		<< layer[i].src.y << ","
-				<< layer[i].sp.x << ","
-				<< layer[i].sp.y << ","
-				<< layer[i].fp << ","
-				<< layer[i].tt << std::endl;
-	}
-
-	outFile.close();
-}
-
-void loadLayers(std::string filePath, Rectangle& worldArea)
-{
-	std::ifstream file("spawn.txt");
-	if(!file)
-	{
-		std::cerr << "NO SPAWN POINT SAVED 'n";
-	}
-
-	float spx, spy;
-	file >> spx >> spy;
-	std::cout << spx <<  " " << spy << std::endl;
-
-	spawn = {spx, spy};
-	file.close();
-
-    std::ifstream inFile(filePath);
-	if(!inFile)
-	{
-		std::cerr << "NO LAYERS TO SAVE \n";
-		return;
-	}
-
-	// containing the records of every peice of data in txt file
-	std::vector<std::vector<std::string>> data;
-
-	while(inFile)
-	{
-		std::string line;
-		if(!std::getline(inFile, line)) break;
-
-		std::stringstream ss(line);
-		// splits each element in the ith line into a vector of values
-		std::vector<std::string> record;
-
-		while(ss)
-		{
-			std::string s;
-			if(!std::getline(ss, s, ',')) break;
-
-			record.push_back(s);
-		}
-		data.push_back(record);
-	}
-
-	inFile.close();
-
-	// iterate through every line in txt file
-	for(const auto& record : data)
-	{
-		Vector2 src = {std::stof(record[0]), std::stof(record[1])};
-		Vector2 sp = {std::stof(record[2]), std::stof(record[3])};
-		std::string fp = record[4];
-
-		Element tt = Element(std::stoi(record[5]));
-		Texture2D tx = LoadTexture(fp.c_str());
-
-		Tile loadedTile = {src, sp, tx, fp, tt};
-		
-		// adj world size if loading world larger than current one
-		if(loadedTile.sp.x + (SCREEN_TILE_SIZE * 2)  > worldArea.x + worldArea.width)
-		{
-			worldArea.width += SCREEN_TILE_SIZE;
-		}
-		
-		if(loadedTile.sp.y + SCREEN_TILE_SIZE > worldArea.y + worldArea.height)
-		{
-			worldArea.height += SCREEN_TILE_SIZE;
-		}
-
-		// add element to appropriate layer
-		switch (tt)
-		{
-			case WALL: walls.push_back(loadedTile); break;
-			case FLOOR: floors.push_back(loadedTile); break;
-			case DOOR: doors.push_back(loadedTile); break;
-			case BUFF: buffs.push_back(loadedTile); break;
-			case INTERACTABLE: interactables.push_back(loadedTile); break;
-			default:
-				break;
-		}
-	}
-}
 
 void deinit(Texture2D texture, std::vector<Tile>& tile_dict)
 {
@@ -256,7 +125,7 @@ void tileSelection(std::vector<Tile>& tile_dict, Rectangle side_panel, Tile& cur
 }
 
 // to edit a specific layer by tile creation and/or deletion
-void editLayer(std::vector<Tile>& layer, Tile& currTile, Rectangle& worldArea)
+void editLayer(std::vector<Tile>& layer, Tile& currTile, Rectangle& worldArea, Element ce)
 {
 	// creation
 	if(CheckCollisionPointRec(mp, worldArea))
@@ -267,7 +136,7 @@ void editLayer(std::vector<Tile>& layer, Tile& currTile, Rectangle& worldArea)
 		if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && !currTile.fp.empty())
 		{
 			// create new tile
-			layer.push_back({currTile.src, {float(mpx), float(mpy)}, currTile.tx, currTile.fp, currTile.tt});
+			layer.push_back({currTile.src, {float(mpx), float(mpy)}, currTile.tx, currTile.fp, ce});
 		}
 	}
 
@@ -283,37 +152,21 @@ void editLayer(std::vector<Tile>& layer, Tile& currTile, Rectangle& worldArea)
 		}
 	}
 }
-
-void drawLayer(std::vector<Tile>& layer, Color color, Rectangle worldArea, const char * dsc)
-{
-	for(int i = 0; i < layer.size(); i++)
-	{
-		// only draw tile if in bounds
-		if(!layer[i].fp.empty() && layer[i].sp.x < worldArea.x + worldArea.width && layer[i].sp.y < worldArea.y + worldArea.height)
-		{
-			DrawTexturePro(layer[i].tx, {layer[i].src.x, layer[i].src.y, TILE_SIZE, TILE_SIZE}, {layer[i].sp.x, layer[i].sp.y, float(SCREEN_TILE_SIZE), float(SCREEN_TILE_SIZE)}, {0,0}, 0, WHITE);
-			
-			// char desc the type of tile it is
-			DrawText(dsc, layer[i].sp.x + SCREEN_TILE_SIZE - MeasureText(dsc, 5), layer[i].sp.y + TILE_SIZE, 5, color);
-		}
-	}
-}
-
-void editWorld(Rectangle worldArea, Tile& currTile, int ce)
+void editWorld(Rectangle worldArea, Tile& currTile, Element ce, int& cl)
 {
 	// edit corresp layer based on layer selection  
 	switch (ce)
 	{
 		case WALL: 
-			editLayer(walls, currTile, worldArea); break;
+			editLayer(world.walls, currTile, worldArea, ce); break;
 		case FLOOR: 
-			editLayer(floors, currTile, worldArea); break;
+			editLayer(world.floors, currTile, worldArea, ce); break;
 		case DOOR:
-			editLayer(doors, currTile, worldArea); break;
+			editLayer(world.doors, currTile, worldArea,ce); break;
 		case BUFF:
-			editLayer(buffs, currTile, worldArea); break;
+			editLayer(world.buffs, currTile, worldArea, ce); break;
 		case INTERACTABLE: 
-			editLayer(interactables, currTile, worldArea); break;
+			editLayer(world.interactables, currTile, worldArea, ce); break;
 		case SPAWN:
 			if(CheckCollisionPointRec(mp, worldArea))
 			{
@@ -325,6 +178,12 @@ void editWorld(Rectangle worldArea, Tile& currTile, int ce)
 			break;
 		default:
 			break;
+	}
+
+	// toggle seeing tile descriptor or not
+	if(IsKeyPressed(KEY_Y))
+	{
+			cl = (cl == 6) ? 0 : 6;
 	}
 }
 
@@ -339,7 +198,6 @@ void updateMapSize(Rectangle& worldArea, Rectangle edit_map_panel)
 		worldArea.width += SCREEN_TILE_SIZE;
 	}
 
-	// Shrink world width button logic
 	if(GuiButton({edit_map_panel.x + SCREEN_TILE_SIZE * 3, edit_map_panel.y + PANEL_HEIGHT + SCREEN_TILE_SIZE, float(SCREEN_TILE_SIZE), float(SCREEN_TILE_SIZE)}, "-"))
 	{
 		if(worldArea.width > SCREEN_TILE_SIZE)
@@ -354,7 +212,6 @@ void updateMapSize(Rectangle& worldArea, Rectangle edit_map_panel)
 		worldArea.height += SCREEN_TILE_SIZE;
 	}
 
-	// shrink world height
 	if(GuiButton({edit_map_panel.x + SCREEN_TILE_SIZE * 3, edit_map_panel.y + PANEL_HEIGHT + (SCREEN_TILE_SIZE * 3), float(SCREEN_TILE_SIZE), float(SCREEN_TILE_SIZE)}, "-"))
 	{
 		if(worldArea.height > SCREEN_TILE_SIZE)
@@ -375,7 +232,7 @@ int main()
 	Rectangle layer_panel = {GetScreenWidth() - TILE_SIZE - SCREEN_TILE_SIZE * 5.0f, float(SCREEN_TILE_SIZE), SCREEN_TILE_SIZE * 5.0f, SCREEN_TILE_SIZE * 7.0f};
 	Rectangle edit_map_panel = {GetScreenWidth() - TILE_SIZE - SCREEN_TILE_SIZE * 5.0f, layer_panel.y + layer_panel.height + SCREEN_TILE_SIZE, SCREEN_TILE_SIZE * 5.0f, SCREEN_TILE_SIZE * 5.0f};
 	// current layer user selects
-	int cl = 6;
+	int cl = -1;
 	// flag to show input box to name txt file
 	bool showTextInputBox = false;
 	char textInput [256];
@@ -417,7 +274,8 @@ int main()
 			// loading previously saved file
 			if(IsFileExtension(fileDialogState.fileNameText, ".txt"))
 			{
-				loadLayers(fileDialogState.fileNameText, worldArea);
+				clearWorld(world);
+				loadLayers(fileDialogState.fileNameText, worldArea, world, spawn);
 			}
 
             fileDialogState.SelectFilePressed = false;
@@ -431,26 +289,31 @@ int main()
 			BeginMode2D(camera);
 				
 				DrawRectangleLines(worldArea.x, worldArea.y, worldArea.width, worldArea.height, GRAY);
-				editWorld(worldArea, currTile, (Element)cl);
+				editWorld(worldArea, currTile, (Element)cl, cl);
 				DrawText("S", spawn.x + SCREEN_TILE_SIZE, spawn.y + TILE_SIZE, 5, BLACK);
-				// draw each layer, dont show tile descriptor if in "player mode"
-				drawLayer(floors, RED, worldArea, "F");
-				drawLayer(buffs, YELLOW, worldArea, "B");
-				drawLayer(doors, ORANGE, worldArea, "D");
-				drawLayer(interactables,GREEN, worldArea, "I");
-				drawLayer(walls, BLUE, worldArea, "W");
+				// drawing each layer
+				bool showDsc = (cl != 6);
+				drawLayer(world.floors, RED, worldArea, "F", showDsc);
+				drawLayer(world.buffs, YELLOW, worldArea, "B", showDsc);
+				drawLayer(world.doors, ORANGE, worldArea, "D", showDsc);
+				drawLayer(world.interactables,GREEN, worldArea, "I", showDsc);
+				drawLayer(world.walls, BLUE, worldArea, "W", showDsc);
 				
 			EndMode2D();
-		
+			// selecting tiles from left side panel
 			tileSelection(tile_dict, side_panel, currTile);
+			// updating the size of the map
 			updateMapSize(worldArea, edit_map_panel);
 			// showing layers
 			GuiPanel(layer_panel, "LAYER TO EDIT");
 			GuiToggleGroup((Rectangle){ GetScreenWidth() - SCREEN_TILE_SIZE * 5.0f, float(SCREEN_TILE_SIZE + PANEL_HEIGHT + TILE_SIZE), SCREEN_TILE_SIZE * 4.0f, 24}, "WALLS \n FLOORS \n DOORS \n BUFFS \n INTERACTABLES \n SPAWN POINT", &cl);
-            
 
             // only focus on the window choosing your file
-            if (fileDialogState.windowActive) GuiLock();
+            if (fileDialogState.windowActive)
+			{
+				GuiLock();
+				currTile = { 0 };
+			} 
 
 			// saving worlds and loading textures
 			if (GuiButton((Rectangle){ TILE_SIZE, 8, float(SCREEN_TILE_SIZE * 3), float(TILE_SIZE) }, GuiIconText(ICON_FILE_SAVE, "SAVE WORLD"))) showTextInputBox = true;
@@ -465,6 +328,7 @@ int main()
 			// enterting file name to save new world
 			if (showTextInputBox)
             {
+				currTile = {  0 };
                 DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(RAYWHITE, 0.8f));
                 int result = GuiTextInputBox((Rectangle){ (float)GetScreenWidth()/2 - 120, (float)GetScreenHeight()/2 - 60, 240, 140 }, GuiIconText(ICON_FILE_SAVE, "Save file as..."), "Introduce output file name:", "Ok;Cancel", textInput, 255, NULL);
 
@@ -475,11 +339,11 @@ int main()
 					{
 						system(("touch " + std::string(textInput) + ".txt").c_str());
 						
-						saveLayer(walls, std::string(textInput) + ".txt");
-						saveLayer(floors, std::string(textInput) + ".txt");
-						saveLayer(doors, std::string(textInput) + ".txt");
-						saveLayer(buffs, std::string(textInput) + ".txt");
-						saveLayer(interactables, std::string(textInput) + ".txt");
+						saveLayer(world.walls, std::string(textInput) + ".txt");
+						saveLayer(world.floors, std::string(textInput) + ".txt");
+						saveLayer(world.doors, std::string(textInput) + ".txt");
+						saveLayer(world.buffs, std::string(textInput) + ".txt");
+						saveLayer(world.interactables, std::string(textInput) + ".txt");
 						cl = 6;
 					}
                 }
