@@ -12,9 +12,10 @@ enum Element{
 	WALL = 0,
 	FLOOR = 1,
 	DOOR = 2,
-	BUFF = 3,
-	INTERACTABLE = 4,
-	SPAWN = 5,
+	HEALTH_BUFF = 3,
+	DAMAGE_BUFF = 4,
+	INTERACTABLE = 5,
+	SPAWN = 6,
 };
 
 struct Tile
@@ -31,11 +32,13 @@ struct World
 std::vector<Tile> walls;
 std::vector<Tile> floors;
 std::vector<Tile> doors;
-std::vector<Tile> buffs;
+std::vector<Tile> health_buffs;
+std::vector<Tile> damage_buffs;
 std::vector<Tile> interactables;
+Vector2 spawn;
 };
 
 void saveLayer(std::vector<Tile>& layer, std::string filePath);
-void loadLayers(std::string filePath, Rectangle& worldArea, World& world, Vector2 spawn);
+void loadLayers(std::string filePath, Rectangle& worldArea, World& world);
 void drawLayer(std::vector<Tile>& layer, Color color, Rectangle worldArea, const char * dsc, bool showDsc);
 void clearWorld(World& world);

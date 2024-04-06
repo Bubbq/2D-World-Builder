@@ -1,5 +1,5 @@
 all:
-	g++ generation.cpp editor.cpp  -o run -lraylib
+	gcc main.c -o run -lraylib -lm
 clean:
 	rm run
 	rm spawn.txt

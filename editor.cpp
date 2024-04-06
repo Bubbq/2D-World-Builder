@@ -21,8 +21,6 @@ int mpx, mpy = 0;
 
 World world;
 
-Vector2 spawn = { -999, -999};
-
 // mouse position relative to the 2d camera object 
 Vector2 mp = { 0 };
 
@@ -34,7 +32,7 @@ void deinit(Texture2D texture, std::vector<Tile>& tile_dict)
 	}
 	
 	std::ofstream outFile("spawn.txt");
-	outFile  << spawn.x << " " << spawn.y << std::endl;
+	outFile  << world.spawn.x << " " << world.spawn.y << std::endl;
 	outFile.close();
 
 	tile_dict.clear();
@@ -163,8 +161,10 @@ void editWorld(Rectangle worldArea, Tile& currTile, Element ce, int& cl)
 			editLayer(world.floors, currTile, worldArea, ce); break;
 		case DOOR:
 			editLayer(world.doors, currTile, worldArea,ce); break;
-		case BUFF:
-			editLayer(world.buffs, currTile, worldArea, ce); break;
+		case HEALTH_BUFF:
+			editLayer(world.health_buffs, currTile, worldArea, ce); break;
+		case DAMAGE_BUFF:
+			editLayer(world.damage_buffs, currTile, worldArea, ce); break;
 		case INTERACTABLE: 
 			editLayer(world.interactables, currTile, worldArea, ce); break;
 		case SPAWN:
@@ -172,7 +172,7 @@ void editWorld(Rectangle worldArea, Tile& currTile, Element ce, int& cl)
 			{
 				if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 				{
-					spawn = {float(mpx), float(mpy)};
+					world.spawn = {float(mpx), float(mpy)};
 				}
 			}
 			break;
@@ -275,7 +275,7 @@ int main()
 			if(IsFileExtension(fileDialogState.fileNameText, ".txt"))
 			{
 				clearWorld(world);
-				loadLayers(fileDialogState.fileNameText, worldArea, world, spawn);
+				loadLayers(fileDialogState.fileNameText, worldArea, world);
 			}
 
             fileDialogState.SelectFilePressed = false;
@@ -290,14 +290,15 @@ int main()
 				
 				DrawRectangleLines(worldArea.x, worldArea.y, worldArea.width, worldArea.height, GRAY);
 				editWorld(worldArea, currTile, (Element)cl, cl);
-				DrawText("S", spawn.x + SCREEN_TILE_SIZE, spawn.y + TILE_SIZE, 5, BLACK);
 				// drawing each layer
 				bool showDsc = (cl != 6);
 				drawLayer(world.floors, RED, worldArea, "F", showDsc);
-				drawLayer(world.buffs, YELLOW, worldArea, "B", showDsc);
-				drawLayer(world.doors, ORANGE, worldArea, "D", showDsc);
-				drawLayer(world.interactables,GREEN, worldArea, "I", showDsc);
-				drawLayer(world.walls, BLUE, worldArea, "W", showDsc);
+				drawLayer(world.health_buffs, ORANGE, worldArea, "HB", showDsc);
+				drawLayer(world.damage_buffs, YELLOW, worldArea, "DB", showDsc);
+				drawLayer(world.doors, GREEN, worldArea, "D", showDsc);
+				drawLayer(world.interactables,BLUE, worldArea, "I", showDsc);
+				drawLayer(world.walls, PURPLE, worldArea, "W", showDsc);
+				DrawText("S", world.spawn.x + SCREEN_TILE_SIZE, world.spawn.y + TILE_SIZE, 5, PINK);
 				
 			EndMode2D();
 			// selecting tiles from left side panel
@@ -306,7 +307,7 @@ int main()
 			updateMapSize(worldArea, edit_map_panel);
 			// showing layers
 			GuiPanel(layer_panel, "LAYER TO EDIT");
-			GuiToggleGroup((Rectangle){ GetScreenWidth() - SCREEN_TILE_SIZE * 5.0f, float(SCREEN_TILE_SIZE + PANEL_HEIGHT + TILE_SIZE), SCREEN_TILE_SIZE * 4.0f, 24}, "WALLS \n FLOORS \n DOORS \n BUFFS \n INTERACTABLES \n SPAWN POINT", &cl);
+			GuiToggleGroup((Rectangle){ GetScreenWidth() - SCREEN_TILE_SIZE * 5.0f, float(SCREEN_TILE_SIZE + PANEL_HEIGHT + TILE_SIZE), SCREEN_TILE_SIZE * 4.0f, 24}, "WALLS \n FLOORS \n DOORS \n BUFFS (HEALTH) \n BUFFS (DAMAGE) \n INTERACTABLES \n SPAWN POINT", &cl);
 
             // only focus on the window choosing your file
             if (fileDialogState.windowActive)
@@ -342,7 +343,8 @@ int main()
 						saveLayer(world.walls, std::string(textInput) + ".txt");
 						saveLayer(world.floors, std::string(textInput) + ".txt");
 						saveLayer(world.doors, std::string(textInput) + ".txt");
-						saveLayer(world.buffs, std::string(textInput) + ".txt");
+						saveLayer(world.health_buffs, std::string(textInput) + ".txt");
+						saveLayer(world.damage_buffs, std::string(textInput) + ".txt");
 						saveLayer(world.interactables, std::string(textInput) + ".txt");
 						cl = 6;
 					}

@@ -26,7 +26,7 @@ void saveLayer(std::vector<Tile>& layer, std::string filePath)
 	outFile.close();
 }
 
-void loadLayers(std::string filePath, Rectangle& worldArea, World& world, Vector2 spawn)
+void loadLayers(std::string filePath, Rectangle& worldArea, World& world)
 {
 	std::ifstream file("spawn.txt");
 	if(!file)
@@ -38,7 +38,7 @@ void loadLayers(std::string filePath, Rectangle& worldArea, World& world, Vector
 	file >> spx >> spy;
 	std::cout << spx <<  " " << spy << std::endl;
 
-	spawn = {spx, spy};
+	world.spawn = {spx, spy};
 	file.close();
 
     std::ifstream inFile(filePath);
@@ -101,7 +101,8 @@ void loadLayers(std::string filePath, Rectangle& worldArea, World& world, Vector
 			case WALL: world.walls.push_back(loadedTile); break;
 			case FLOOR: world.floors.push_back(loadedTile); break;
 			case DOOR: world.doors.push_back(loadedTile); break;
-			case BUFF: world.buffs.push_back(loadedTile); break;
+			case HEALTH_BUFF: world.health_buffs.push_back(loadedTile); break;
+			case DAMAGE_BUFF: world.damage_buffs.push_back(loadedTile); break;
 			case INTERACTABLE: world.interactables.push_back(loadedTile); break;
 			default:
 				break;
@@ -130,8 +131,9 @@ void drawLayer(std::vector<Tile>& layer, Color color, Rectangle worldArea, const
 void clearWorld(World& world)
 {
     world.walls.clear();
-    world.buffs.clear();
     world.doors.clear();
     world.floors.clear();
+    world.health_buffs.clear();
+    world.damage_buffs.clear();
     world.interactables.clear();
 }

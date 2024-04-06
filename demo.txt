@@ -419,8 +419,6 @@
 144,80,672,160,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 144,80,640,192,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 144,80,672,192,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
-144,80,640,224,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
-144,80,672,224,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 144,80,640,256,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 144,80,672,256,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 144,80,640,288,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
@@ -466,12 +464,14 @@
 144,80,704,448,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 144,80,736,480,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 144,80,704,480,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
+112,16,640,224,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
+112,16,672,224,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,1
 80,48,512,32,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,2
 96,48,544,32,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,2
-144,64,544,288,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,3
 160,32,320,64,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,3
 160,32,352,64,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,3
 160,32,320,96,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,3
-80,64,544,256,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,4
-32,48,320,480,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,4
-32,64,352,480,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,4
+128,48,352,480,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,3
+128,48,320,448,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,3
+128,48,320,480,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,3
+80,64,512,256,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,5
