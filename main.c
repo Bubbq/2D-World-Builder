@@ -429,19 +429,21 @@ void loadLayers(World *world, Rectangle *world_area, char *filePath)
 		}
 	}
 
+	fclose(inFile);
+
 	// loading spawn point
 	FILE * file = fopen("spawn.txt", "r");
 	if(file == NULL)
 	{
-		printf("ERROR LOADING SPAWN POINT \n");
+		printf("NO SPAWN POINT SAVED \n");
+		return;
 	}
 
 	char buff[512];
 	fgets(buff, sizeof(buff), file);
 	world->spawn.x = atoi(strtok(buff, " "));
 	world->spawn.y = atoi(strtok(NULL, " "));
-
-	fclose(inFile);
+	fclose(file);
 }
 
 bool saveWorld(World *world, Tile *current_tile, char saved_file_path[512])
@@ -612,6 +614,16 @@ int main()
 			DrawText("S", world.spawn.x + SCREEN_TILE_SIZE, world.spawn.y + TILE_SIZE,5, PINK);
 		EndMode2D();
 
+		if(edit)
+		{
+			DrawText("EDITING", 900 - (MeasureText("EDITING", 30) / 2), 950, 30, RED);
+		}
+
+		else 
+		{	
+			DrawText("FREE VIEW", 900- (MeasureText("FREE VIEW", 30) / 2), 950, 30, BLUE);
+		}
+
 		// choosing the tile to edit the world with
 		select_tiles(side_panel, &tile_dict, &current_tile);
 		// choosing which layer to  add to
@@ -623,6 +635,12 @@ int main()
 		// selecting png or text file to load textures or worlds to edit
 		if (GuiButton((Rectangle){SCREEN_TILE_SIZE * 4, 8, SCREEN_TILE_SIZE * 5,TILE_SIZE},GuiIconText(ICON_FILE_OPEN, "LOAD WORLD/TEXTURE"))) fileDialogState.windowActive = true;
 		if (GuiButton((Rectangle){TILE_SIZE, 8, SCREEN_TILE_SIZE * 3, TILE_SIZE},GuiIconText(ICON_FILE_SAVE, "SAVE WORLD"))) showInputTextBox = true;
+		
+		// resetting world to original position
+		if (GuiButton((Rectangle){SCREEN_TILE_SIZE * 9.5, 8, SCREEN_TILE_SIZE * 2, TILE_SIZE},GuiIconText(ICON_FILE_SAVE, "FOCUS")))
+		{
+			camera.offset = mp;
+		}
 
 		GuiUnlock();
 
