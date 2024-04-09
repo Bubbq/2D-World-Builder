@@ -60,7 +60,8 @@ typedef struct {
 	Vector2 spawn;
 } World;
 
-void initWorld(World *world) {
+void initWorld(World *world)
+{
 	world->walls.list = (Tile *)malloc(25 * sizeof(Tile));
 	world->floors.list = (Tile *)malloc(25 * sizeof(Tile));
 	world->doors.list = (Tile *)malloc(25 * sizeof(Tile));
@@ -73,54 +74,33 @@ void initWorld(World *world) {
 	world->interactables.cap = 25 * sizeof(Tile);
 }
 
-void resize_tile_list(TileList *layer) {
+void resize_tile_list(TileList *layer)
+{
 	layer->cap *= 2;
 	layer->list = (Tile *)realloc(layer->list, layer->cap);
 
 	if (layer->list == NULL)
 	{
-	printf("RESIZING FAILED \n");
-	exit(1);
+		printf("RESIZING FAILED \n");
+		exit(1);
 	}
 }
 
-void add_tile(TileList *layer, Tile tile) {
-	if (layer->size * sizeof(Tile) == layer->cap) {
-	resize_tile_list(layer);
+void add_tile(TileList *layer, Tile tile)
+{
+	if (layer->size * sizeof(Tile) == layer->cap)
+	{
+		resize_tile_list(layer);
 	}
 
 	layer->list[layer->size] = tile;
 	layer->size++;
 }
 
-void remove_tile(TileList *layer, int pos) {
-	if (layer->size == 0) {
-	return;
-	}
-
-	for (int i = pos; i < layer->size; i++)
-	{
-	layer->list[i] = layer->list[i + 1];
-	}
-
-	layer->size--;
-	if (layer->size == 0)
-	{
-	free(layer->list);
-	layer->list = malloc(sizeof(Tile));
-	layer->size = 0;
-	layer->cap = sizeof(Tile);
-	}
-
-	else
-	{
-	layer->list = (Tile *)realloc(layer->list, sizeof(Tile) * layer->size + 1);
-	}
-}
-
-void clear_layer(TileList *layer) {
+void clear_layer(TileList *layer)
+{
 	for (int i = 0; i < layer->size; i++) {
-	UnloadTexture(layer->list[i].tx);
+		UnloadTexture(layer->list[i].tx);
 	}
 
 	free(layer->list);
@@ -129,7 +109,35 @@ void clear_layer(TileList *layer) {
 	layer->cap = 25 * sizeof(Tile);
 }
 
-void init(World *world, TileList *tile_dict) {
+void remove_tile(TileList *layer, int pos)
+{
+	if (layer->size == 0)
+	{
+		return;
+	}
+
+	for (int i = pos; i < layer->size; i++)
+	{
+		layer->list[i] = layer->list[i + 1];
+	}
+
+	layer->size--;
+	if (layer->size == 0)
+	{
+		free(layer->list);
+		layer->list = malloc(sizeof(Tile));
+		layer->size = 0;
+		layer->cap = sizeof(Tile);
+	}
+
+	else
+	{
+		layer->list = (Tile *)realloc(layer->list, layer->cap);
+	}
+}
+
+void init(World *world, TileList *tile_dict)
+{
 	SetTraceLogLevel(LOG_ERROR);
 	InitWindow(992, 992, "Editor");
 	initWorld(world);
@@ -138,7 +146,8 @@ void init(World *world, TileList *tile_dict) {
 	tile_dict->cap = 25 * sizeof(Tile);
 }
 
-void deinit(World *world, TileList *tile_dict) {
+void deinit(World *world, TileList *tile_dict)
+{
 	clear_layer(tile_dict);
 	clear_layer(&world->walls);
 	clear_layer(&world->floors);
@@ -156,18 +165,18 @@ void readPNG(Texture2D texture, TileList *tile_dict, char *fp)
 	// surface area of the image with respect to tilesize
 	while (cp.x < texture.width && cp.y < texture.height)
 	{
-	add_tile(tile_dict, (Tile){cp, (Vector2){0}, texture, FLOOR, fp});
+		add_tile(tile_dict, (Tile){cp, (Vector2){0}, texture, FLOOR, fp});
 
-	if (cp.x + TILE_SIZE != texture.width)
-	{
-		cp.x += TILE_SIZE;
-	}
+		if (cp.x + TILE_SIZE != texture.width)
+		{
+			cp.x += TILE_SIZE;
+		}
 
-	else
-	{ // move to next layer
-		cp.x = 0;
-		cp.y += TILE_SIZE;
-	}
+		else
+		{ // move to next layer
+			cp.x = 0;
+			cp.y += TILE_SIZE;
+		}
 	}
 }
 
@@ -179,6 +188,8 @@ void select_tiles(Rectangle side_panel, TileList *tile_dict, Tile *current_tile)
 	if (GuiButton((Rectangle){side_panel.x + side_panel.width - PANEL_HEIGHT,side_panel.y, PANEL_HEIGHT, PANEL_HEIGHT},GuiIconText(ICON_BIN, "")))
 	{
 		clear_layer(tile_dict);
+		*current_tile = (Tile){ 0 };
+		DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
 	}
 
 	// the last tile before overflowing the side panel, TODO FIX HARDCODED Y VALUE
@@ -214,7 +225,8 @@ void select_tiles(Rectangle side_panel, TileList *tile_dict, Tile *current_tile)
 			// update current tile
 			if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 			{
-				*current_tile = tile_dict->list[i];
+				Texture2D tx = LoadTexture(tile_dict->list[i].fp);
+				*current_tile = (Tile){tile_dict->list[i].src, tile_dict->list[i].sp, tx, tile_dict->list[i].tt, tile_dict->list[i].fp};
 			}
 		}
 	}
@@ -331,7 +343,7 @@ void drawLayer(TileList *layer, Color color, Rectangle world_area,const char *ds
 	for (int i = 0; i < layer->size; i++)
 	{
 		// only draw tile if in bounds
-		if (layer->list[i].tx.id != 0 &&layer->list[i].sp.x < world_area.x + world_area.width &&layer->list[i].sp.y < world_area.y + world_area.height)
+		if (layer->list[i].tx.id != 0 && layer->list[i].sp.x < world_area.x + world_area.width &&layer->list[i].sp.y < world_area.y + world_area.height)
 		{
 			DrawTexturePro(layer->list[i].tx,(Rectangle){layer->list[i].src.x, layer->list[i].src.y,TILE_SIZE, TILE_SIZE},(Rectangle){layer->list[i].sp.x, layer->list[i].sp.y,SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},(Vector2){0, 0}, 0, WHITE);
 
@@ -358,7 +370,7 @@ void saveLayer(TileList *layer, char *filePath)
 	{
 		if (layer->list[i].tx.id != 0)
 		{
-			fprintf(inFile, "%d,%d,%d,%d,%d,%s\n", (int)layer->list[i].src.x,(int)layer->list[i].src.y, (int)layer->list[i].sp.x,(int)layer->list[i].sp.y, layer->list[i].tt, layer->list[i].fp);
+			fprintf(inFile, "%d,%d,%d,%d,%d,%s,\n", (int)layer->list[i].src.x,(int)layer->list[i].src.y, (int)layer->list[i].sp.x,(int)layer->list[i].sp.y, layer->list[i].tt, layer->list[i].fp);
 		}
 	}
 
@@ -389,10 +401,9 @@ void loadLayers(World *world, Rectangle *world_area, char *filePath)
 		sp.x = atoi(strtok(NULL, ","));
 		sp.y = atoi(strtok(NULL, ","));
 		tt = (enum Element)atoi(strtok(NULL, ","));
-		fp = strtok(NULL, "\n");
+		fp = strtok(NULL, ",");
 		tx = LoadTexture(fp);
 		Tile tile = (Tile){src, sp, tx, tt, fp};
-
 		// adj world size if loading world larger than init size
 		if (tile.sp.x + SCREEN_TILE_SIZE > world_area->x + world_area->width)
 		{
@@ -592,7 +603,6 @@ int main()
 
 		ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 
-
 		BeginMode2D(camera);
 			DrawRectangleLines(world_area.x, world_area.y, world_area.width,world_area.height, GRAY);
 
@@ -613,6 +623,17 @@ int main()
 
 			DrawText("S", world.spawn.x + SCREEN_TILE_SIZE, world.spawn.y + TILE_SIZE,5, PINK);
 		EndMode2D();
+
+		if(IsKeyPressed(KEY_A))
+		{
+			clear_layer(&world.walls);
+			clear_layer(&world.floors);
+			clear_layer(&world.doors);
+			clear_layer(&world.health_buffs);
+			clear_layer(&world.damage_buffs);
+			clear_layer(&world.interactables);
+			current_tile = (Tile){ 0 };
+		}
 
 		if(edit)
 		{
