@@ -226,13 +226,6 @@ void selectTile(Rectangle side_panel, TileList *tile_dict, Tile *current_tile)
 		}
 	}
 
-	// reset tiles to choose from
-	if (IsKeyPressed(KEY_F))
-	{
-		eraseLayer(tile_dict);
-		*current_tile = (Tile){0};
-	}
-
 	// highlight the current tile a user has selected
 	if (current_tile->tx.id != 0)
 	{
@@ -656,6 +649,7 @@ int main()
 			if ((result == 0) || (result == 1) || (result == 2))
 			{
 				showInputTextBox = false;
+				strcpy(saved_file_path, "");
 			}
 		}
 
