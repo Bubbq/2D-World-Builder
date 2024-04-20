@@ -157,7 +157,7 @@ void readPNG(Texture2D texture, TileList *tile_dict, char *fp)
 	while (cp.x < texture.width && cp.y < texture.height)
 	{	
 		Tile tile = {cp, (Vector2){0}, texture, FLOOR ,"NULL"};
-        strcpy(tile.fp, fp);
+        	strcpy(tile.fp, fp);
 		addTile(tile_dict, tile);
 
 		if (cp.x + TILE_SIZE != texture.width)
@@ -186,7 +186,7 @@ void selectTile(Rectangle side_panel, TileList *tile_dict, Tile *current_tile)
 		DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
 	}
 
-	// the last tile before overflowing the side panel, TODO FIX HARDCODED Y VALUE
+	// position of the last tile before overflowing, resize display tile size if any tile reaches here to prevent overfilling in left side panel
 	Vector2 lt = {side_panel.x + side_panel.width - DISPLAY_TILE_SIZE, 888};
 	Vector2 cp = {side_panel.x, side_panel.y + PANEL_HEIGHT};
 
@@ -310,12 +310,9 @@ void editWorld(World *world, Rectangle world_area, Tile *current_tile,enum Eleme
 			break;
 		// updating spawn point
 		case SPAWN:
-			if (CheckCollisionPointRec(mp, world_area))
+			if (CheckCollisionPointRec(mp, world_area) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 			{
-				if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-				{
-					world->spawn = (Vector2){mpx, mpy};
-				}
+				world->spawn = (Vector2){mpx, mpy};
 			}
 			break;
 	}
@@ -329,7 +326,6 @@ void drawLayer(TileList *layer, Color color, Rectangle world_area,const char *ds
 		if (layer->list[i].tx.id != 0 && layer->list[i].sp.x < world_area.x + world_area.width &&layer->list[i].sp.y < world_area.y + world_area.height)
 		{
 			DrawTexturePro(layer->list[i].tx,(Rectangle){layer->list[i].src.x, layer->list[i].src.y,TILE_SIZE, TILE_SIZE},(Rectangle){layer->list[i].sp.x, layer->list[i].sp.y,SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},(Vector2){0, 0}, 0, WHITE);
-
 			// character describing what type of tile it is
 			DrawText(dsc,layer->list[i].sp.x + SCREEN_TILE_SIZE - MeasureText(dsc, 5),layer->list[i].sp.y + TILE_SIZE, 5, color);
 		}
@@ -372,6 +368,7 @@ void loadLayers(World *world, Rectangle *world_area, char *filePath, TileList* t
 	Texture2D tx;
 	enum Element tt;
 	char* fp ; 
+	char lfp[512];
 
 	while (fgets(line, sizeof(line), inFile))
 	{
@@ -383,8 +380,14 @@ void loadLayers(World *world, Rectangle *world_area, char *filePath, TileList* t
 		fp = strtok(NULL, ",");
 		tx = LoadTexture(fp);
 		
-		Tile tile = (Tile){src, sp, tx, tt, "NULL"};
-		strcpy(tile.fp, fp);
+		if(strcmp(lfp, fp) != 0)
+		{
+        	tx = LoadTexture(fp);
+			strcpy(lfp, fp);
+		}
+
+        Tile tile = (Tile){src, sp, tx, tt, "NULL"};
+        strcpy(tile.fp, fp);
 
 		// adj world size if loading world larger than init size
 		if (tile.sp.x + SCREEN_TILE_SIZE > world_area->x + world_area->width)
@@ -495,8 +498,9 @@ int main()
 	while (!WindowShouldClose())
 	{
 		mp = GetScreenToWorld2D(GetMousePosition(), camera);
-        camera.offset = GetMousePosition();
-        camera.target = mp;
+		camera.offset = GetMousePosition();
+		camera.target = mp;
+		
 		// snap mouse position to nearest tile by making it divisble by the screen tile size
 		mpx = (((int)mp.x >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
 		mpy = (((int)mp.y >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));

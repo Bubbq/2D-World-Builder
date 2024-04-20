@@ -1,7 +1,11 @@
+# to move in created world, NOTE: you need to have a spawn.txt
 all:
-	gcc main.c -o run -lraylib -lm
-old:
-	g++ editor.cpp generation.cpp -o run -lraylib -lm
+	gcc game.c -o run -lraylib -lm -Wall 
+
+#  using the editor
+editor:
+	gcc main.c -o run -lraylib -lm -Wall
+
 clean:
 	rm run
-	rm spawn.txt
+	clear
