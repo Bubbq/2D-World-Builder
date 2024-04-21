@@ -21,8 +21,6 @@ int DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
 
 int mpx, mpy = 0;
 
-int to_delete = -1;
-
 // mouse position relative to the 2d camera object
 Vector2 mp = {0};
 

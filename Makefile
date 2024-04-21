@@ -1,4 +1,4 @@
-# to move in created world, NOTE: you need to have a spawn.txt
+# to move in created world
 all:
 	gcc game.c -o run -lraylib -lm -Wall 
 

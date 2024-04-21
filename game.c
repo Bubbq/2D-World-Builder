@@ -18,6 +18,7 @@ const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
 
 const int ANIMATION_SPEED = 20;
+const int FPS = 60;
 
 enum Element
 {
@@ -39,23 +40,6 @@ typedef struct
 	char fp[512];
 } Tile;
 
-const int INIT_CAP = (25 * sizeof(Tile));
-const int TEXTURE_CAP = 25;
-
-typedef struct
-{
-	int size;
-	size_t cap;
-	Tile* list;
-} TileList;
-
-typedef struct
-{
-	Texture2D txts[25];
-	int size;
-	size_t cap;
-} Textures;
-
 typedef struct
 {
 	const char* name;
@@ -69,6 +53,30 @@ typedef struct
 	bool move;
 	Texture2D tx;
 } Entity;
+
+const size_t INIT_TILE_CAP = (25 * sizeof(Tile));
+const size_t INIT_ENTITY_CAP = 3 * sizeof(Entity);
+const int TEXTURE_CAP = 25;
+
+typedef struct
+{
+	int size;
+	size_t cap;
+	Tile* list;
+} TileList;
+
+typedef struct
+{
+	Texture2D tx;
+	char fp[512];
+} BetterTexture;
+
+typedef struct
+{
+	BetterTexture better_textxures[25];
+	int size;
+} Textures;
+
 
 typedef struct
 {
@@ -130,8 +138,8 @@ void removeEntity(Entities* world_entities, int pos)
 	{
 		free(world_entities->entities);
 		world_entities->size = 0;
-		world_entities->entities = malloc(3 * sizeof(Entity));
-		world_entities->cap = 3 * sizeof(Entity);
+		world_entities->entities = malloc(INIT_ENTITY_CAP);
+		world_entities->cap = INIT_ENTITY_CAP;
 	}
 }
 
@@ -175,12 +183,12 @@ void removeTile(TileList* layer, int pos)
 	{
 		free(layer->list);
 		layer->size = 0;
-		layer->list = malloc(INIT_CAP);
-		layer->cap = INIT_CAP;
+		layer->list = malloc(INIT_TILE_CAP);
+		layer->cap = INIT_TILE_CAP;
 	}
 }
 
-void loadLayers(World* world, Textures* textures, const char* filePath)
+void loadLayers(World* world, Textures textures, const char* filePath)
 {
     FILE* inFile = fopen(filePath, "r");
     char line[512];
@@ -194,7 +202,8 @@ void loadLayers(World* world, Textures* textures, const char* filePath)
     Vector2 sp;
     enum Element tt;
     char* fp;
-	char lfp[512];
+	// the position of the texture in Textures array to load for a tile
+	int ctxi = -1;
 
     while(fgets(line, sizeof(line), inFile))
     {
@@ -205,13 +214,30 @@ void loadLayers(World* world, Textures* textures, const char* filePath)
         tt = (enum Element)atoi(strtok(NULL, ","));
         fp = strtok(NULL, ",");
 
-		if(strcmp(lfp, fp) != 0)
+		// only add unique textures
+		bool unique = true;
+
+		for(int i = 0; i < textures.size; i++)
 		{
-			textures->txts[textures->size++] = LoadTexture(fp);
-			strcpy(lfp, fp);
+			// if we alr have that texture, load it from the ith position
+			if(strcmp(textures.better_textxures[i].fp, fp) == 0)
+			{
+				unique = false;
+				ctxi = i;
+			}
 		}
 
-        Tile tile = (Tile){src, sp, textures->txts[textures->size - 1], tt, "NULL"};
+		if(unique)
+		{
+			textures.better_textxures[textures.size] = (BetterTexture){LoadTexture(fp), "NULL"};
+			strcpy(textures.better_textxures[textures.size].fp, fp);
+			textures.size++;
+		}
+
+		// if we already have this tile, use it at that index, if not, the newest texture should hold the correct one to load
+		ctxi = (ctxi == -1) ? (textures.size - 1) : ctxi;
+
+        Tile tile = (Tile){src, sp, textures.better_textxures[ctxi].tx, tt, "NULL"};
         strcpy(tile.fp, fp);
 
         switch (tt)
@@ -253,18 +279,43 @@ void drawLayer(TileList* layer)
     }
 }
 
-void init(World* world, Textures* textures)
+void init(World* world)
 {
 	SetTraceLogLevel(LOG_ERROR);
-	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "RPG-GAME");
-	SetTargetFPS(60);
+	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "2D-Engine");
+	SetTargetFPS(FPS);
 
+	world->walls.size = 0;
+	world->floors.size = 0;
+	world->doors.size = 0;
+	world->health_buffs.size = 0;
+	world->damage_buffs.size = 0;
+	world->interactables.size = 0;
+	world->entities.size = 0;
+	
+	world->entities.entities = malloc(INIT_ENTITY_CAP);
+	world->walls.list = malloc(INIT_TILE_CAP);
+	world->floors.list = malloc(INIT_TILE_CAP);
+	world->doors.list = malloc(INIT_TILE_CAP);
+	world->health_buffs.list = malloc(INIT_TILE_CAP);
+	world->damage_buffs.list = malloc(INIT_TILE_CAP);
+	world->interactables.list = malloc(INIT_TILE_CAP);
+
+	world->entities.cap = INIT_ENTITY_CAP;
+    world->interactables.cap = (INIT_TILE_CAP);
+    world->walls.cap = (INIT_TILE_CAP);
+    world->floors.cap = (INIT_TILE_CAP);
+    world->doors.cap = (INIT_TILE_CAP);
+    world->health_buffs.cap = (INIT_TILE_CAP);
+    world->damage_buffs.cap = (INIT_TILE_CAP);
+	
 	// getting spawn point
 	FILE* inFile = fopen(SPAWN_PATH, "r");
 	if(inFile == NULL)
 	{
 		printf("NO SPAWN POINT SAVED \n");
 		world->spawn = (Vector2){0, 0};
+		return;
 	}
 
 	else
@@ -278,35 +329,9 @@ void init(World* world, Textures* textures)
 	}
 
 	fclose(inFile);
-
-	textures->size = 0;
-
-	world->walls.size = 0;
-	world->floors.size = 0;
-	world->doors.size = 0;
-	world->health_buffs.size = 0;
-	world->damage_buffs.size = 0;
-	world->interactables.size = 0;
-	world->entities.size = 0;
-	
-	world->entities.entities = malloc(3 * sizeof(Entity));
-	world->walls.list = malloc(INIT_CAP);
-	world->floors.list = malloc(INIT_CAP);
-	world->doors.list = malloc(INIT_CAP);
-	world->health_buffs.list = malloc(INIT_CAP);
-	world->damage_buffs.list = malloc(INIT_CAP);
-	world->interactables.list = malloc(INIT_CAP);
-
-	world->entities.cap = 3 * sizeof(Entity);
-    world->interactables.cap = (INIT_CAP);
-    world->walls.cap = (INIT_CAP);
-    world->floors.cap = (INIT_CAP);
-    world->doors.cap = (INIT_CAP);
-    world->health_buffs.cap = (INIT_CAP);
-    world->damage_buffs.cap = (INIT_CAP);
 }
 
-void deinit(World *world, Textures* textures)
+void deinit(World *world, Textures textures)
 {
 	free(world->walls.list);
 	free(world->floors.list);
@@ -318,10 +343,7 @@ void deinit(World *world, Textures* textures)
 
 	for(int i = 0; i < TEXTURE_CAP; i++)
 	{
-		if(textures->txts[i].id != 0)
-		{
-			UnloadTexture(textures->txts[i]);
-		}
+		UnloadTexture(textures.better_textxures[i].tx);
 	}
 
 	CloseWindow();
@@ -442,8 +464,9 @@ int main()
 {
     World world;
 	Textures textures;
-	init(&world, &textures);
-    loadLayers(&world, &textures, WORLD_PATH);
+	textures.size = 0;
+	init(&world);
+    loadLayers(&world, textures, WORLD_PATH);
 	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, LoadTexture(PLAYER_PATH)};
 	
 	Camera2D camera = {0};
@@ -470,7 +493,8 @@ int main()
 				updatePlayer(&world, &player);
 			EndMode2D();
 			
-			// --------------------------------------- SIMULATING GETTING HIT----------------------------------------//
+			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
+			// using health buff
 			for(int i = 0; i < world.health_buffs.size; i++)
 			{
 				if(CheckCollisionRecs((Rectangle){player.pos.x, player.pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
@@ -484,21 +508,22 @@ int main()
 				}
 			}
 
+			// taking damage
 			if(IsKeyPressed(KEY_L))
 			{
 				player.health = player.health - 20 < 0 ? 0 : player.health - 20;
 			}
 
-			// players health bar
+			// drawing the player's health bar
 			DrawRectangle(GetScreenWidth() - 310,GetScreenHeight() - 60, (300) * (player.health / 100),50, RED);
 			DrawRectangleLines(GetScreenWidth() - 310, GetScreenHeight() - 60, 300,50, BLACK);
 			DrawText("HEALTH", GetScreenWidth() - 300, GetScreenHeight() - 80, 20, RED);
 			DrawFPS(0, 0);
-			// --------------------------------------- SIMULATING GETTING HIT----------------------------------------//
+			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
 
         EndDrawing();
     }
 
-    deinit(&world, &textures);
+    deinit(&world, textures);
     return 0;
 }
