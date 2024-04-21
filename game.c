@@ -12,14 +12,13 @@ const int TILE_SIZE = 16;
 const float SCALE = 2.0f;
 const int SCREEN_TILE_SIZE = TILE_SIZE * SCALE;
 
+// update path to world you have previously saved
 const char* WORLD_PATH = "world.txt";
 const char* SPAWN_PATH = "spawn.txt";
-const char* PLAYER_PATH = "player.png";
+const char* PLAYER_PATH = "Assets/player.png";
 
 const int ANIMATION_SPEED = 20;
 
-// flag for adjusting speed
-bool adjsp = false;
 enum Element
 {
 	WALL = 0,
@@ -65,6 +64,9 @@ typedef struct
 	float speed;
 	Vector2 pos;
 	bool alive;
+	// flag for diagonal speed adjustment
+	bool adjsp;
+	bool move;
 	Texture2D tx;
 } Entity;
 
@@ -153,6 +155,29 @@ void addTile(TileList* layer, Tile tile)
     }
 
     layer->list[layer->size++] = tile;
+}
+
+void removeTile(TileList* layer, int pos)
+{
+	if(layer->size == 0)
+	{
+		return;
+	}
+
+	for(int i = pos; i < layer->size; i++)
+	{
+		layer->list[i] = layer->list[i + 1];
+	}
+
+	layer->size--;
+
+	if(layer->size == 0)
+	{
+		free(layer->list);
+		layer->size = 0;
+		layer->list = malloc(INIT_CAP);
+		layer->cap = INIT_CAP;
+	}
 }
 
 void loadLayers(World* world, Textures* textures, const char* filePath)
@@ -308,6 +333,7 @@ void updatePlayer(World* world, Entity* player)
 	int xfp = 0;
 	int yfp = 0;
 	player->frame_count++;
+
 	xfp = (player->frame_count / ANIMATION_SPEED);
 	if(xfp > 3)
 	{
@@ -323,28 +349,30 @@ void updatePlayer(World* world, Entity* player)
 
     if (diagonal)
     {
-        if (!adjsp)
+        if (!player->adjsp)
         {
 			// pythag thm: 2x^2 - player's_peed^2 = 0, solve for x to find diag speed movement to prevent moving faster diagonly
             float ns = sqrt(4 * (2) * (pow(player->speed, 2))) / 4;
             player->speed = ns;
-            adjsp = true;
+			player->adjsp = true;
         }
     } 
 				
 	else
     {
         player->speed = 3;
-        adjsp = false;
+		player->adjsp = false;
     }
 
 	if(IsKeyDown(KEY_W))
 	{
 		player->pos.y -= player->speed;
 		yfp = 1;
+		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
 			{
 				player->pos.y += player->speed;
 			}
@@ -355,9 +383,11 @@ void updatePlayer(World* world, Entity* player)
 	{
 		player->pos.x -= player->speed;
 		yfp = 3;
+		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
 			{
 				player->pos.x += player->speed;
 			}
@@ -368,9 +398,11 @@ void updatePlayer(World* world, Entity* player)
 	{
 		player->pos.y += player->speed;
 		yfp = 0;
+		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
 			{
 				player->pos.y -= player->speed;
 			}
@@ -381,17 +413,29 @@ void updatePlayer(World* world, Entity* player)
 	{
 		player->pos.x += player->speed;
 		yfp = 2;
+		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
 			{
 				player->pos.x -= player->speed;
 			}
 		}
 	}
 
+	// when afk, have sprite look forward facing user
+	if(!player->move)
+	{
+		xfp = yfp = 0;
+	}
+
 	// drawing player
-	DrawTexturePro(player->tx, (Rectangle){xfp * TILE_SIZE, yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE}, (Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+	DrawTexturePro(player->tx, (Rectangle){xfp * TILE_SIZE, yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
+										 (Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+	
+	// resetting movement flag
+	player->move = false;
 }
 
 int main()
@@ -400,7 +444,7 @@ int main()
 	Textures textures;
 	init(&world, &textures);
     loadLayers(&world, &textures, WORLD_PATH);
-	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, LoadTexture(PLAYER_PATH)};
+	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, LoadTexture(PLAYER_PATH)};
 	
 	Camera2D camera = {0};
 	camera.target = player.pos;
@@ -425,8 +469,32 @@ int main()
 				drawLayer(&world.walls);
 				updatePlayer(&world, &player);
 			EndMode2D();
+			
+			// --------------------------------------- SIMULATING GETTING HIT----------------------------------------//
+			for(int i = 0; i < world.health_buffs.size; i++)
+			{
+				if(CheckCollisionRecs((Rectangle){player.pos.x, player.pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
+									(Rectangle){world.health_buffs.list[i].sp.x, world.health_buffs.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+				{
+					if(IsKeyPressed(KEY_E) && player.health < 100)
+					{
+						player.health = player.health + 20 > 100 ? 100 : player.health + 20;
+						removeTile(&world.health_buffs, i);
+					}
+				}
+			}
 
+			if(IsKeyPressed(KEY_L))
+			{
+				player.health = player.health - 20 < 0 ? 0 : player.health - 20;
+			}
+
+			// players health bar
+			DrawRectangle(GetScreenWidth() - 310,GetScreenHeight() - 60, (300) * (player.health / 100),50, RED);
+			DrawRectangleLines(GetScreenWidth() - 310, GetScreenHeight() - 60, 300,50, BLACK);
+			DrawText("HEALTH", GetScreenWidth() - 300, GetScreenHeight() - 80, 20, RED);
 			DrawFPS(0, 0);
+			// --------------------------------------- SIMULATING GETTING HIT----------------------------------------//
 
         EndDrawing();
     }

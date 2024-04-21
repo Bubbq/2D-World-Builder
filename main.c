@@ -493,7 +493,7 @@ int main()
 	Texture current_texture = {0};
 	Camera2D camera = {0};
 	camera.zoom = 1.0f;
-	Tile currTile = {0};
+	// Tile currTile = {0};
 
 	while (!WindowShouldClose())
 	{
