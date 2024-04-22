@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <raylib.h>
+#include<raymath.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -31,6 +32,13 @@ enum Element
 	SPAWN = 6,
 };
 
+enum Direction
+{
+	LEFT_RIGHT = 1,
+	UP_DOWN = 2,
+	DIAGONAL = 3,
+};
+
 typedef struct
 {
 	Vector2 src;
@@ -39,6 +47,12 @@ typedef struct
 	enum Element tt;
 	char fp[512];
 } Tile;
+
+typedef struct
+{
+	double startTime;
+	double lifeTime;
+} Timer;
 
 typedef struct
 {
@@ -52,10 +66,13 @@ typedef struct
 	bool adjsp;
 	bool move;
 	Texture2D tx;
+	enum Direction dir;
+	Timer choice_timer;
+ 	// Timer direction_timer;
 } Entity;
 
 const size_t INIT_TILE_CAP = (25 * sizeof(Tile));
-const size_t INIT_ENTITY_CAP = 3 * sizeof(Entity);
+const size_t INIT_ENTITY_CAP = (3 * sizeof(Entity));
 const int TEXTURE_CAP = 25;
 
 typedef struct
@@ -95,7 +112,22 @@ typedef struct
 	TileList damage_buffs;
 	TileList interactables;
 	Vector2 spawn;
+	int spawn_rate;
 } World;
+
+
+Timer choice_timer;
+
+void StartTimer(Timer *timer, double lifetime)
+{
+	timer->startTime = GetTime();
+	timer->lifeTime = lifetime;
+}
+
+bool TimerDone(Timer timer)
+{
+	return GetTime() - timer.startTime >= timer.lifeTime;
+}
 
 void resizeEntities(Entities* world_entities)
 {
@@ -112,9 +144,7 @@ void addEntity(Entities* world_entities, Entity entity)
 {
 	if(world_entities->size * sizeof(Entity) == world_entities->cap)
 	{
-		printf("need to resize \n");
 		resizeEntities(world_entities);
-		printf("resized sucessfully \n");
 	}
 
 	world_entities->entities[world_entities->size++] = entity;
@@ -292,6 +322,8 @@ void init(World* world)
 	world->damage_buffs.size = 0;
 	world->interactables.size = 0;
 	world->entities.size = 0;
+
+	world->spawn_rate = 60;
 	
 	world->entities.entities = malloc(INIT_ENTITY_CAP);
 	world->walls.list = malloc(INIT_TILE_CAP);
@@ -347,6 +379,140 @@ void deinit(World *world, Textures textures)
 	}
 
 	CloseWindow();
+}
+
+enum Direction updateCoordinate(Vector2* mp, Vector2* pp, enum Direction dir, float sp, Timer* direction_timer)
+{
+	switch (dir)
+	{
+		case DIAGONAL:
+		case UP_DOWN:
+			if((int)mp->y < (int)pp->y)
+			{
+				mp->y += sp;
+			}
+			if((int)mp->y > (int)pp->y)
+			{
+				mp->y -= sp;
+			}
+			if((int)mp->y == (int)pp->y)
+			{
+				return LEFT_RIGHT;
+			}
+			// else
+			// {
+			// 	return UP_DOWN;
+			// }
+			//break;
+		case LEFT_RIGHT:
+			if((int)mp->x < (int)pp->x)
+			{
+				mp->x += sp;
+			}
+			if((int)mp->x > (int)pp->x)
+			{
+				mp->x -= sp;
+			}
+			if((int)mp->x == (int)pp->x)
+			{
+				return UP_DOWN;
+			}
+			// else
+			// {
+			// 	return LEFT_RIGHT;
+			// }
+			//break;
+		}
+
+		// on diagonl movement, if no cariesian coordinate is satisfied, then chose any direction	
+		if(TimerDone(*direction_timer))
+		{
+			StartTimer(direction_timer, 1);
+			return GetRandomValue(1,3);
+		}
+		else
+		{
+			return dir;
+		}
+}
+
+void updateEntities(Entities* world_entities, Entity* player)
+{
+	for(int i = 0; i < world_entities->size; i++)
+	{
+		int xfp, yfp = 0;
+		// flag fo x and y movement
+		// bool xmv, ymv = false;
+		// speed entity moves to player, will be adjusted if movement is diagonal
+		// float sp = world_entities->entities[i].speed;
+		// Vector2 fp = {0};
+		world_entities->entities[i].frame_count++;
+
+		xfp = (world_entities->entities[i].frame_count / ANIMATION_SPEED);
+		if(xfp > 3)
+		{
+			world_entities->entities[i].frame_count = 0;
+			xfp = 0;
+			// xmv = true;
+		}
+
+		// if(TimerDone(world_entities->entities[i].choice_timer))
+		// {
+		// 	StartTimer(&world_entities->entities[i].choice_timer, 3);
+		// 	world_entities->entities[i].dir = (enum Direction)GetRandomValue(1, 3);
+		// 	if((int)world_entities->entities[i].pos.x == (int)player->pos.x && world_entities->entities[i].dir == LEFT_RIGHT) world_entities->entities[i].dir = UP_DOWN;
+		// 	if((int)world_entities->entities[i].pos.y == (int)player->pos.y && world_entities->entities[i].dir == UP_DOWN) world_entities->entities[i].dir = LEFT_RIGHT;
+		// }
+
+		world_entities->entities[i].dir = updateCoordinate(&world_entities->entities[i].pos, &player->pos, world_entities->entities[i].dir, world_entities->entities[i].speed, &world_entities->entities[i].choice_timer);
+
+		// if(world_entities->entities[i].dir == LEFT_RIGHT)
+		// {
+		// 	if((int)world_entities->entities[i].pos.x < (int)player->pos.x)
+		// 	{
+		// 		yfp = 2;
+		// 		// xmv = true;
+		// 		// fp = (Vector2){sp, 0};
+		// 		world_entities->entities[i].pos.x += world_entities->entities[i].speed;
+		// 		if((int)world_entities->entities[i].pos.x == (int)player->pos.x) world_entities->entities[i].dir = UP_DOWN;
+		// 	}
+
+
+		// 	if((int)world_entities->entities[i].pos.x > (int)player->pos.x)
+		// 	{
+		// 		// xmv = true;
+		// 		yfp = 3;
+		// 		// fp = (Vector2){-sp, 0};
+		// 		world_entities->entities[i].pos.x -= world_entities->entities[i].speed;
+		// 		if((int)world_entities->entities[i].pos.x == (int)player->pos.x) world_entities->entities[i].dir = UP_DOWN;
+		// 	}
+		// }
+
+		// if(world_entities->entities[i].dir == UP_DOWN)
+		// {
+		// 	// moving towards the player
+		// 	if((int)world_entities->entities[i].pos.y < (int)player->pos.y)
+		// 	{
+		// 		// ymv = true;
+		// 		yfp = 0;
+		// 		world_entities->entities[i].pos.y += world_entities->entities[i].speed;
+		// 		if((int)world_entities->entities[i].pos.y == (int)player->pos.y) world_entities->entities[i].dir = LEFT_RIGHT;
+		// 		// fp = (Vector2){0,sp};
+		// 	}
+
+		// 	if((int)world_entities->entities[i].pos.y > (int)player->pos.y)
+		// 	{
+		// 		// ymv = true;
+		// 		yfp = 1;
+		// 		world_entities->entities[i].pos.y -= world_entities->entities[i].speed;
+		// 		if((int)world_entities->entities[i].pos.y == (int)player->pos.y) world_entities->entities[i].dir = LEFT_RIGHT;
+		// 		// fp = (Vector2){0,-sp};
+		// 	}
+		// }
+		// draw enemy
+		DrawTexturePro(world_entities->entities[i].tx, (Rectangle){xfp * TILE_SIZE, yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
+							(Rectangle){world_entities->entities[i].pos.x, world_entities->entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+	}
 }
 
 void updatePlayer(World* world, Entity* player)
@@ -468,7 +634,8 @@ int main()
 	init(&world);
     loadLayers(&world, textures, WORLD_PATH);
 	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, LoadTexture(PLAYER_PATH)};
-	
+	Vector2 mp;
+	Rectangle world_rectangle;
 	Camera2D camera = {0};
 	camera.target = player.pos;
 	camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
@@ -476,6 +643,7 @@ int main()
 
 	while(!WindowShouldClose())
     {
+		mp = GetScreenToWorld2D(GetMousePosition(), camera);
 		camera.target = player.pos;
 		camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
 
@@ -484,12 +652,14 @@ int main()
             ClearBackground(WHITE);
 
 			BeginMode2D(camera);
+				world_rectangle = (Rectangle){camera.target.x - camera.offset.x, camera.target.y - camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
 				drawLayer(&world.floors);
 				drawLayer(&world.health_buffs);
 				drawLayer(&world.damage_buffs);
 				drawLayer(&world.doors);
 				drawLayer(&world.interactables);
 				drawLayer(&world.walls);
+				updateEntities(&world.entities, &player);
 				updatePlayer(&world, &player);
 			EndMode2D();
 			
@@ -511,7 +681,7 @@ int main()
 			// taking damage
 			if(IsKeyPressed(KEY_L))
 			{
-				player.health = player.health - 20 < 0 ? 0 : player.health - 20;
+				player.health = (player.health - 20 < 0) ? 0 : player.health - 20;
 			}
 
 			// drawing the player's health bar
@@ -521,6 +691,15 @@ int main()
 			DrawFPS(0, 0);
 			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
 
+			// --------------------------------------- MOB MECHANICS----------------------------------------//
+			if(CheckCollisionPointRec(mp, world_rectangle) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+			{
+				Timer ct;
+				StartTimer(&ct, 1);
+				addEntity(&world.entities, (Entity){"mob", 0, 100, 1, mp, true, false, false, LoadTexture(PLAYER_PATH), LEFT_RIGHT, ct});
+			}
+
+			// --------------------------------------- MOB MECHANICS----------------------------------------//
         EndDrawing();
     }
 
