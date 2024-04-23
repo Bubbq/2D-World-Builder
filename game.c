@@ -70,6 +70,8 @@ typedef struct
 	Timer timer;
 	int xfp;
 	int yfp;
+	float exp;
+	int level;
  	// Timer direction_timer;
 } Entity;
 
@@ -160,7 +162,7 @@ void removeEntity(Entities* world_entities, int pos)
 		return;
 	}
 
-	for(int i = 0; i < world_entities->size; i++)
+	for(int i = pos; i < world_entities->size; i++)
 	{
 		world_entities->entities[i] = world_entities->entities[i + 1];
 	}
@@ -389,22 +391,22 @@ void deinit(World *world)
 	CloseWindow();
 }
 
-enum Direction updateCoordinate(Vector2* mp, Vector2* pp, enum Direction dir, float sp, Timer* direction_timer, int* yfp)
+enum Direction updateCoordinate(Entity* en, Entity* player)
 {
-	switch (dir)
+	switch (en->dir)
 	{
 		case UP_DOWN:
-			if((int)mp->y < (int)pp->y)
+			if((int)en->pos.y < (int)player->pos.y)
 			{
-				*yfp = 0;
-				mp->y += sp;
+				en->yfp = 0;
+				en->pos.y += en->speed;
 			}
-			if((int)mp->y > (int)pp->y)
+			if((int)en->pos.y > (int)player->pos.y)
 			{
-				*yfp = 1;
-				mp->y -= sp;
+				en->yfp = 1;
+				en->pos.y -= en->speed;
 			}
-			if((int)mp->y == (int)pp->y)
+			if((int)en->pos.y == (int)player->pos.y)
 			{
 				return LEFT_RIGHT;
 			}
@@ -414,17 +416,17 @@ enum Direction updateCoordinate(Vector2* mp, Vector2* pp, enum Direction dir, fl
 			}
 			break;
 		case LEFT_RIGHT:
-			if((int)mp->x < (int)pp->x)
+			if((int)en->pos.x < (int)player->pos.x)
 			{
-				*yfp = 2;
-				mp->x += sp;
+				en->yfp = 2;
+				en->pos.x += en->speed;
 			}
-			if((int)mp->x > (int)pp->x)
+			if((int)en->pos.x > (int)player->pos.x)
 			{
-				*yfp = 3;
-				mp->x -= sp;
+				en->yfp = 3;
+				en->pos.x -= en->speed;
 			}
-			if((int)mp->x == (int)pp->x)
+			if((int)en->pos.x == (int)player->pos.x)
 			{
 				return UP_DOWN;
 			}
@@ -444,33 +446,33 @@ void updateEntities(Entities* world_entities, Entity* player)
 {
 	for(int i = 0; i < world_entities->size; i++)
 	{
-		world_entities->entities[i].frame_count++;
+		Entity* en = &world_entities->entities[i];
+		en->frame_count++;
 
-		world_entities->entities[i].xfp = (world_entities->entities[i].frame_count / ANIMATION_SPEED);
-		if(world_entities->entities[i].xfp > 3)
+		en->xfp = (en->frame_count / ANIMATION_SPEED);
+		if(en->xfp > 3)
 		{
-			world_entities->entities[i].frame_count = 0;
-			world_entities->entities[i].xfp = 0;
+			en->frame_count = 0;
+			en->xfp = 0;
 			// xmv = true;
 		}
 
-		if(TimerDone(world_entities->entities[i].timer))
+		if(TimerDone(en->timer))
 		{
-			StartTimer(&world_entities->entities[i].timer, 1.25);
-			world_entities->entities[i].dir = (enum Direction)GetRandomValue(1, 2);
+			StartTimer(&en->timer, 1.25);
+			en->dir = (enum Direction)GetRandomValue(1, 2);
 		}
 
 		// updating the direction of the enemy
-		world_entities->entities[i].dir = updateCoordinate(&world_entities->entities[i].pos, &player->pos, world_entities->entities[i].dir, 
-											world_entities->entities[i].speed, &world_entities->entities[i].timer, &world_entities->entities[i].yfp);
+		en->dir = updateCoordinate(en, player);
 
 		// drawing rectangle showing their health
-		DrawRectangle(world_entities->entities[i].pos.x + 5, world_entities->entities[i].pos.y - 7, 20 * (world_entities->entities[i].health / 100), 7, RED);
+		DrawRectangle(en->pos.x + 5, en->pos.y - 7, 20 * (en->health / 100), 7, RED);
 		// health border
-		DrawRectangleLines(world_entities->entities[i].pos.x + 5, world_entities->entities[i].pos.y - 7, 20, 7, BLACK);
+		DrawRectangleLines(en->pos.x + 5, en->pos.y - 7, 20, 7, BLACK);
 
-		DrawTexturePro(world_entities->entities[i].tx, (Rectangle){world_entities->entities[i].xfp * TILE_SIZE, world_entities->entities[i].yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
-							(Rectangle){world_entities->entities[i].pos.x, world_entities->entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+		DrawTexturePro(en->tx, (Rectangle){en->xfp * TILE_SIZE, en->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
+							(Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
 	}
 }
 
@@ -589,18 +591,18 @@ int main()
 	world.textures.size = 0;
 	init(&world);
     loadLayers(&world, WORLD_PATH);
-	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, addTexture(&world.textures, PLAYER_PATH)};
+	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, addTexture(&world.textures, PLAYER_PATH), 0};
 	Vector2 mp;
 	Rectangle world_rectangle;
 	Camera2D camera = {0};
+	// level bar header
+	char levelDsc[512];
 	camera.target = player.pos;
 	camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
-	int itr = 1;
 	camera.zoom = 1.75f;
 
 	while(!WindowShouldClose())
     {
-		itr++;
 		mp = GetScreenToWorld2D(GetMousePosition(), camera);
 		camera.target = player.pos;
 		camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
@@ -661,24 +663,32 @@ int main()
 					if(IsKeyPressed(KEY_E))
 					{
 						world.entities.entities[i].health = world.entities.entities[i].health - 20 > 0 ? world.entities.entities[i].health - 20 : 0;
-						if(world.entities.entities[i].health <= 0)
+						// killing an enemy
+						if(world.entities.entities[i].health == 0)
 						{
 							removeEntity(&world.entities, i);
+							// gaining experience/leveling up
+							player.exp += 20;
+							if(player.exp >= 100)
+							{
+								player.exp = 0;
+								player.level++;
+							}
 						}
 					}
 				}
-			}
 
-			if(!TimerDone(player.timer))
-			{
-				if(itr % 30)
-				{
-					
-				}
-				
 			}
+			
+			// drawing and updating players level
+			DrawRectangle(10, GetScreenHeight() - 60, (300) * (player.exp / 100), 50, GREEN);
+			DrawRectangleLines(10, GetScreenHeight() - 60, 300, 50, BLACK);
+			sprintf(levelDsc, "LEVEL: %d", player.level);
+			DrawText(levelDsc, 10, GetScreenHeight() - 80, 20, GREEN);
+			// --------------------------------------- FIGHT MECHANICS----------------------------------------//
 
 			// --------------------------------------- MOB MECHANICS----------------------------------------//
+			// creation of dummy enemies
 			if(CheckCollisionPointRec(mp, world_rectangle) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 			{
 				Timer ct;
