@@ -67,7 +67,9 @@ typedef struct
 	bool move;
 	Texture2D tx;
 	enum Direction dir;
-	Timer choice_timer;
+	Timer timer;
+	int xfp;
+	int yfp;
  	// Timer direction_timer;
 } Entity;
 
@@ -90,7 +92,7 @@ typedef struct
 
 typedef struct
 {
-	BetterTexture better_textxures[25];
+	BetterTexture better_textures[25];
 	int size;
 } Textures;
 
@@ -111,12 +113,13 @@ typedef struct
 	TileList health_buffs;
 	TileList damage_buffs;
 	TileList interactables;
+	Textures textures;
 	Vector2 spawn;
 	int spawn_rate;
 } World;
 
 
-Timer choice_timer;
+Timer timer;
 
 void StartTimer(Timer *timer, double lifetime)
 {
@@ -218,7 +221,36 @@ void removeTile(TileList* layer, int pos)
 	}
 }
 
-void loadLayers(World* world, Textures textures, const char* filePath)
+// returns the texture from a list of textures specified by filepath
+Texture2D addTexture(Textures* textures, const char* filePath)
+{
+	int ctxi = -1;
+	bool unique = true;
+	for(int i = 0; i < textures->size; i++)
+	{
+		// if we alr have that texture, load it from the ith position
+		if(strcmp(textures->better_textures[i].fp, filePath) == 0)
+		{
+			unique = false;
+			ctxi = i;
+		}
+	}
+
+	if(unique)
+	{
+		textures->better_textures[textures->size] = (BetterTexture){LoadTexture(filePath), "NULL"};
+		strcpy(textures->better_textures[textures->size].fp, filePath);
+		textures->size++;
+	}
+
+	// if we already have this tile, use it at that index, if not, the newest texture should hold the correct one to load
+	ctxi = (ctxi == -1) ? (textures->size - 1) : ctxi;
+
+	// return the texture of new or recurring element
+	return textures->better_textures[ctxi].tx;
+}
+
+void loadLayers(World* world, const char* filePath)
 {
     FILE* inFile = fopen(filePath, "r");
     char line[512];
@@ -233,7 +265,6 @@ void loadLayers(World* world, Textures textures, const char* filePath)
     enum Element tt;
     char* fp;
 	// the position of the texture in Textures array to load for a tile
-	int ctxi = -1;
 
     while(fgets(line, sizeof(line), inFile))
     {
@@ -244,30 +275,7 @@ void loadLayers(World* world, Textures textures, const char* filePath)
         tt = (enum Element)atoi(strtok(NULL, ","));
         fp = strtok(NULL, ",");
 
-		// only add unique textures
-		bool unique = true;
-
-		for(int i = 0; i < textures.size; i++)
-		{
-			// if we alr have that texture, load it from the ith position
-			if(strcmp(textures.better_textxures[i].fp, fp) == 0)
-			{
-				unique = false;
-				ctxi = i;
-			}
-		}
-
-		if(unique)
-		{
-			textures.better_textxures[textures.size] = (BetterTexture){LoadTexture(fp), "NULL"};
-			strcpy(textures.better_textxures[textures.size].fp, fp);
-			textures.size++;
-		}
-
-		// if we already have this tile, use it at that index, if not, the newest texture should hold the correct one to load
-		ctxi = (ctxi == -1) ? (textures.size - 1) : ctxi;
-
-        Tile tile = (Tile){src, sp, textures.better_textxures[ctxi].tx, tt, "NULL"};
+        Tile tile = (Tile){src, sp, addTexture(&world->textures, fp), tt, "NULL"};
         strcpy(tile.fp, fp);
 
         switch (tt)
@@ -363,7 +371,7 @@ void init(World* world)
 	fclose(inFile);
 }
 
-void deinit(World *world, Textures textures)
+void deinit(World *world)
 {
 	free(world->walls.list);
 	free(world->floors.list);
@@ -375,142 +383,93 @@ void deinit(World *world, Textures textures)
 
 	for(int i = 0; i < TEXTURE_CAP; i++)
 	{
-		UnloadTexture(textures.better_textxures[i].tx);
+		UnloadTexture(world->textures.better_textures[i].tx);
 	}
 
 	CloseWindow();
 }
 
-enum Direction updateCoordinate(Vector2* mp, Vector2* pp, enum Direction dir, float sp, Timer* direction_timer)
+enum Direction updateCoordinate(Vector2* mp, Vector2* pp, enum Direction dir, float sp, Timer* direction_timer, int* yfp)
 {
 	switch (dir)
 	{
-		case DIAGONAL:
 		case UP_DOWN:
 			if((int)mp->y < (int)pp->y)
 			{
+				*yfp = 0;
 				mp->y += sp;
 			}
 			if((int)mp->y > (int)pp->y)
 			{
+				*yfp = 1;
 				mp->y -= sp;
 			}
 			if((int)mp->y == (int)pp->y)
 			{
 				return LEFT_RIGHT;
 			}
-			// else
-			// {
-			// 	return UP_DOWN;
-			// }
-			//break;
+			else
+			{
+				return UP_DOWN;
+			}
+			break;
 		case LEFT_RIGHT:
 			if((int)mp->x < (int)pp->x)
 			{
+				*yfp = 2;
 				mp->x += sp;
 			}
 			if((int)mp->x > (int)pp->x)
 			{
+				*yfp = 3;
 				mp->x -= sp;
 			}
 			if((int)mp->x == (int)pp->x)
 			{
 				return UP_DOWN;
 			}
-			// else
-			// {
-			// 	return LEFT_RIGHT;
-			// }
-			//break;
-		}
+			else
+			{
+				return LEFT_RIGHT;
+			}
+			break;
+		default:
+			break;
+	}
 
-		// on diagonl movement, if no cariesian coordinate is satisfied, then chose any direction	
-		if(TimerDone(*direction_timer))
-		{
-			StartTimer(direction_timer, 1);
-			return GetRandomValue(1,3);
-		}
-		else
-		{
-			return dir;
-		}
+	return -1;
 }
 
 void updateEntities(Entities* world_entities, Entity* player)
 {
 	for(int i = 0; i < world_entities->size; i++)
 	{
-		int xfp, yfp = 0;
-		// flag fo x and y movement
-		// bool xmv, ymv = false;
-		// speed entity moves to player, will be adjusted if movement is diagonal
-		// float sp = world_entities->entities[i].speed;
-		// Vector2 fp = {0};
 		world_entities->entities[i].frame_count++;
 
-		xfp = (world_entities->entities[i].frame_count / ANIMATION_SPEED);
-		if(xfp > 3)
+		world_entities->entities[i].xfp = (world_entities->entities[i].frame_count / ANIMATION_SPEED);
+		if(world_entities->entities[i].xfp > 3)
 		{
 			world_entities->entities[i].frame_count = 0;
-			xfp = 0;
+			world_entities->entities[i].xfp = 0;
 			// xmv = true;
 		}
 
-		// if(TimerDone(world_entities->entities[i].choice_timer))
-		// {
-		// 	StartTimer(&world_entities->entities[i].choice_timer, 3);
-		// 	world_entities->entities[i].dir = (enum Direction)GetRandomValue(1, 3);
-		// 	if((int)world_entities->entities[i].pos.x == (int)player->pos.x && world_entities->entities[i].dir == LEFT_RIGHT) world_entities->entities[i].dir = UP_DOWN;
-		// 	if((int)world_entities->entities[i].pos.y == (int)player->pos.y && world_entities->entities[i].dir == UP_DOWN) world_entities->entities[i].dir = LEFT_RIGHT;
-		// }
+		if(TimerDone(world_entities->entities[i].timer))
+		{
+			StartTimer(&world_entities->entities[i].timer, 1.25);
+			world_entities->entities[i].dir = (enum Direction)GetRandomValue(1, 2);
+		}
 
-		world_entities->entities[i].dir = updateCoordinate(&world_entities->entities[i].pos, &player->pos, world_entities->entities[i].dir, world_entities->entities[i].speed, &world_entities->entities[i].choice_timer);
+		// updating the direction of the enemy
+		world_entities->entities[i].dir = updateCoordinate(&world_entities->entities[i].pos, &player->pos, world_entities->entities[i].dir, 
+											world_entities->entities[i].speed, &world_entities->entities[i].timer, &world_entities->entities[i].yfp);
 
-		// if(world_entities->entities[i].dir == LEFT_RIGHT)
-		// {
-		// 	if((int)world_entities->entities[i].pos.x < (int)player->pos.x)
-		// 	{
-		// 		yfp = 2;
-		// 		// xmv = true;
-		// 		// fp = (Vector2){sp, 0};
-		// 		world_entities->entities[i].pos.x += world_entities->entities[i].speed;
-		// 		if((int)world_entities->entities[i].pos.x == (int)player->pos.x) world_entities->entities[i].dir = UP_DOWN;
-		// 	}
+		// drawing rectangle showing their health
+		DrawRectangle(world_entities->entities[i].pos.x + 5, world_entities->entities[i].pos.y - 7, 20 * (world_entities->entities[i].health / 100), 7, RED);
+		// health border
+		DrawRectangleLines(world_entities->entities[i].pos.x + 5, world_entities->entities[i].pos.y - 7, 20, 7, BLACK);
 
-
-		// 	if((int)world_entities->entities[i].pos.x > (int)player->pos.x)
-		// 	{
-		// 		// xmv = true;
-		// 		yfp = 3;
-		// 		// fp = (Vector2){-sp, 0};
-		// 		world_entities->entities[i].pos.x -= world_entities->entities[i].speed;
-		// 		if((int)world_entities->entities[i].pos.x == (int)player->pos.x) world_entities->entities[i].dir = UP_DOWN;
-		// 	}
-		// }
-
-		// if(world_entities->entities[i].dir == UP_DOWN)
-		// {
-		// 	// moving towards the player
-		// 	if((int)world_entities->entities[i].pos.y < (int)player->pos.y)
-		// 	{
-		// 		// ymv = true;
-		// 		yfp = 0;
-		// 		world_entities->entities[i].pos.y += world_entities->entities[i].speed;
-		// 		if((int)world_entities->entities[i].pos.y == (int)player->pos.y) world_entities->entities[i].dir = LEFT_RIGHT;
-		// 		// fp = (Vector2){0,sp};
-		// 	}
-
-		// 	if((int)world_entities->entities[i].pos.y > (int)player->pos.y)
-		// 	{
-		// 		// ymv = true;
-		// 		yfp = 1;
-		// 		world_entities->entities[i].pos.y -= world_entities->entities[i].speed;
-		// 		if((int)world_entities->entities[i].pos.y == (int)player->pos.y) world_entities->entities[i].dir = LEFT_RIGHT;
-		// 		// fp = (Vector2){0,-sp};
-		// 	}
-		// }
-		// draw enemy
-		DrawTexturePro(world_entities->entities[i].tx, (Rectangle){xfp * TILE_SIZE, yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
+		DrawTexturePro(world_entities->entities[i].tx, (Rectangle){world_entities->entities[i].xfp * TILE_SIZE, world_entities->entities[i].yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
 							(Rectangle){world_entities->entities[i].pos.x, world_entities->entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
 	}
 }
@@ -518,14 +477,12 @@ void updateEntities(Entities* world_entities, Entity* player)
 void updatePlayer(World* world, Entity* player)
 {
 	// animation
-	int xfp = 0;
-	int yfp = 0;
 	player->frame_count++;
 
-	xfp = (player->frame_count / ANIMATION_SPEED);
-	if(xfp > 3)
+	player->xfp = (player->frame_count / ANIMATION_SPEED);
+	if(player->xfp > 3)
 	{
-		xfp = 0;
+		player->xfp = 0;
 		player->frame_count = 0;
 	}
 
@@ -555,7 +512,7 @@ void updatePlayer(World* world, Entity* player)
 	if(IsKeyDown(KEY_W))
 	{
 		player->pos.y -= player->speed;
-		yfp = 1;
+		player->yfp = 1;
 		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
@@ -570,7 +527,7 @@ void updatePlayer(World* world, Entity* player)
 	if(IsKeyDown(KEY_A))
 	{
 		player->pos.x -= player->speed;
-		yfp = 3;
+		player->yfp = 3;
 		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
@@ -585,7 +542,7 @@ void updatePlayer(World* world, Entity* player)
 	if(IsKeyDown(KEY_S))
 	{
 		player->pos.y += player->speed;
-		yfp = 0;
+		player->yfp = 0;
 		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
@@ -600,7 +557,7 @@ void updatePlayer(World* world, Entity* player)
 	if(IsKeyDown(KEY_D))
 	{
 		player->pos.x += player->speed;
-		yfp = 2;
+		player->yfp = 2;
 		player->move = true;
 		for(int i = 0; i < world->walls.size; i++)
 		{
@@ -615,11 +572,11 @@ void updatePlayer(World* world, Entity* player)
 	// when afk, have sprite look forward facing user
 	if(!player->move)
 	{
-		xfp = yfp = 0;
+		player->xfp = player->yfp = 0;
 	}
 
 	// drawing player
-	DrawTexturePro(player->tx, (Rectangle){xfp * TILE_SIZE, yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
+		DrawTexturePro(player->tx, (Rectangle){player->xfp * TILE_SIZE, player->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
 										 (Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
 	
 	// resetting movement flag
@@ -629,20 +586,21 @@ void updatePlayer(World* world, Entity* player)
 int main()
 {
     World world;
-	Textures textures;
-	textures.size = 0;
+	world.textures.size = 0;
 	init(&world);
-    loadLayers(&world, textures, WORLD_PATH);
-	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, LoadTexture(PLAYER_PATH)};
+    loadLayers(&world, WORLD_PATH);
+	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, addTexture(&world.textures, PLAYER_PATH)};
 	Vector2 mp;
 	Rectangle world_rectangle;
 	Camera2D camera = {0};
 	camera.target = player.pos;
 	camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
+	int itr = 1;
 	camera.zoom = 1.75f;
 
 	while(!WindowShouldClose())
     {
+		itr++;
 		mp = GetScreenToWorld2D(GetMousePosition(), camera);
 		camera.target = player.pos;
 		camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
@@ -670,18 +628,13 @@ int main()
 				if(CheckCollisionRecs((Rectangle){player.pos.x, player.pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
 									(Rectangle){world.health_buffs.list[i].sp.x, world.health_buffs.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
 				{
-					if(IsKeyPressed(KEY_E) && player.health < 100)
+					DrawText("PRESSING H WILL HEAL", GetScreenWidth() - 310, GetScreenHeight() - 110, 20, GREEN);
+					if(IsKeyPressed(KEY_H) && player.health < 100)
 					{
 						player.health = player.health + 20 > 100 ? 100 : player.health + 20;
 						removeTile(&world.health_buffs, i);
 					}
 				}
-			}
-
-			// taking damage
-			if(IsKeyPressed(KEY_L))
-			{
-				player.health = (player.health - 20 < 0) ? 0 : player.health - 20;
 			}
 
 			// drawing the player's health bar
@@ -691,18 +644,52 @@ int main()
 			DrawFPS(0, 0);
 			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
 
+			// --------------------------------------- FIGHT MECHANICS----------------------------------------//
+			// pressing E near an enemy will simulate doing damage
+			for(int i = 0; i < world.entities.size; i++)
+			{
+				if(CheckCollisionRecs((Rectangle){player.pos.x, player.pos.y, SCREEN_TILE_SIZE,SCREEN_TILE_SIZE},
+									 (Rectangle){world.entities.entities[i].pos.x, world.entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+				{
+					// small window of invincibility after getting hit
+					if(TimerDone(player.timer))
+					{
+						StartTimer(&player.timer, 1.5);
+						player.health = (player.health - 20 < 0) ? 0 : player.health - 20;
+					}
+
+					if(IsKeyPressed(KEY_E))
+					{
+						world.entities.entities[i].health = world.entities.entities[i].health - 20 > 0 ? world.entities.entities[i].health - 20 : 0;
+						if(world.entities.entities[i].health <= 0)
+						{
+							removeEntity(&world.entities, i);
+						}
+					}
+				}
+			}
+
+			if(!TimerDone(player.timer))
+			{
+				if(itr % 30)
+				{
+					
+				}
+				
+			}
+
 			// --------------------------------------- MOB MECHANICS----------------------------------------//
 			if(CheckCollisionPointRec(mp, world_rectangle) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 			{
 				Timer ct;
 				StartTimer(&ct, 1);
-				addEntity(&world.entities, (Entity){"mob", 0, 100, 1, mp, true, false, false, LoadTexture(PLAYER_PATH), LEFT_RIGHT, ct});
+				addEntity(&world.entities, (Entity){"mob", 0, 100, 1, mp, true, false, false, addTexture(&world.textures, PLAYER_PATH), LEFT_RIGHT, ct, 0, 0});
 			}
-
 			// --------------------------------------- MOB MECHANICS----------------------------------------//
-        EndDrawing();
+        
+		EndDrawing();
     }
 
-    deinit(&world, textures);
+    deinit(&world);
     return 0;
 }
