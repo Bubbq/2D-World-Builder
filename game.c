@@ -1,17 +1,11 @@
+#include "tile_generation.h"
 #include <math.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <raylib.h>
-#include<raymath.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
-const int PANEL_HEIGHT = 24;
-const int TILE_SIZE = 16;
-const float SCALE = 2.0f;
-const int SCREEN_TILE_SIZE = TILE_SIZE * SCALE;
 
 // update path to world you have previously saved
 const char* WORLD_PATH = "world.txt";
@@ -20,108 +14,6 @@ const char* PLAYER_PATH = "Assets/player.png";
 
 const int ANIMATION_SPEED = 20;
 const int FPS = 60;
-
-enum Element
-{
-	WALL = 0,
-	FLOOR = 1,
-	DOOR = 2,
-	HEALTH_BUFF = 3,
-	DAMAGE_BUFF = 4,
-	INTERACTABLE = 5,
-	SPAWN = 6,
-};
-
-enum Direction
-{
-	LEFT_RIGHT = 1,
-	UP_DOWN = 2,
-	DIAGONAL = 3,
-};
-
-typedef struct
-{
-	Vector2 src;
-	Vector2 sp;
-	Texture2D tx;
-	enum Element tt;
-	char fp[512];
-} Tile;
-
-typedef struct
-{
-	double startTime;
-	double lifeTime;
-} Timer;
-
-typedef struct
-{
-	const char* name;
-	int frame_count;
-	float health;
-	float speed;
-	Vector2 pos;
-	bool alive;
-	// flag for diagonal speed adjustment
-	bool adjsp;
-	bool move;
-	Texture2D tx;
-	enum Direction dir;
-	Timer timer;
-	int xfp;
-	int yfp;
-	float exp;
-	int level;
- 	// Timer direction_timer;
-} Entity;
-
-const size_t INIT_TILE_CAP = (25 * sizeof(Tile));
-const size_t INIT_ENTITY_CAP = (3 * sizeof(Entity));
-const int TEXTURE_CAP = 25;
-
-typedef struct
-{
-	int size;
-	size_t cap;
-	Tile* list;
-} TileList;
-
-typedef struct
-{
-	Texture2D tx;
-	char fp[512];
-} BetterTexture;
-
-typedef struct
-{
-	BetterTexture better_textures[25];
-	int size;
-} Textures;
-
-
-typedef struct
-{
-	Entity* entities;
-	int size;
-	size_t cap;
-} Entities;
-
-typedef struct
-{
-	Entities entities;
-	TileList walls;
-	TileList floors;
-	TileList doors;
-	TileList health_buffs;
-	TileList damage_buffs;
-	TileList interactables;
-	Textures textures;
-	Vector2 spawn;
-	int spawn_rate;
-} World;
-
-
-Timer timer;
 
 void StartTimer(Timer *timer, double lifetime)
 {
@@ -155,29 +47,6 @@ void addEntity(Entities* world_entities, Entity entity)
 	world_entities->entities[world_entities->size++] = entity;
 }
 
-void removeEntity(Entities* world_entities, int pos)
-{
-	if(world_entities->size == 0)
-	{
-		return;
-	}
-
-	for(int i = pos; i < world_entities->size; i++)
-	{
-		world_entities->entities[i] = world_entities->entities[i + 1];
-	}
-
-	world_entities->size--;
-
-	if(world_entities->size == 0)
-	{
-		free(world_entities->entities);
-		world_entities->size = 0;
-		world_entities->entities = malloc(INIT_ENTITY_CAP);
-		world_entities->cap = INIT_ENTITY_CAP;
-	}
-}
-
 void resizeLayer(TileList* layer)
 {
     layer->cap *= 2;
@@ -200,30 +69,6 @@ void addTile(TileList* layer, Tile tile)
     layer->list[layer->size++] = tile;
 }
 
-void removeTile(TileList* layer, int pos)
-{
-	if(layer->size == 0)
-	{
-		return;
-	}
-
-	for(int i = pos; i < layer->size; i++)
-	{
-		layer->list[i] = layer->list[i + 1];
-	}
-
-	layer->size--;
-
-	if(layer->size == 0)
-	{
-		free(layer->list);
-		layer->size = 0;
-		layer->list = malloc(INIT_TILE_CAP);
-		layer->cap = INIT_TILE_CAP;
-	}
-}
-
-// returns the texture from a list of textures specified by filepath
 Texture2D addTexture(Textures* textures, const char* filePath)
 {
 	int ctxi = -1;
@@ -235,6 +80,7 @@ Texture2D addTexture(Textures* textures, const char* filePath)
 		{
 			unique = false;
 			ctxi = i;
+			break;
 		}
 	}
 
@@ -277,7 +123,7 @@ void loadLayers(World* world, const char* filePath)
         tt = (enum Element)atoi(strtok(NULL, ","));
         fp = strtok(NULL, ",");
 
-        Tile tile = (Tile){src, sp, addTexture(&world->textures, fp), tt, "NULL"};
+        Tile tile = (Tile){src, sp, addTexture(&world->textures, fp), tt, "NULL", true};
         strcpy(tile.fp, fp);
 
         switch (tt)
@@ -312,14 +158,15 @@ void drawLayer(TileList* layer)
 {
     for(int i = 0; i < layer->size; i++)
     {
-        if(layer->list[i].tx.id != 0)
+        if(layer->list[i].tx.id > 0 && layer->list[i].active)
         {
-            DrawTexturePro(layer->list[i].tx, (Rectangle){layer->list[i].src.x, layer->list[i].src.y, TILE_SIZE, TILE_SIZE}, (Rectangle){layer->list[i].sp.x, layer->list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+            DrawTexturePro(layer->list[i].tx, (Rectangle){layer->list[i].src.x, layer->list[i].src.y, TILE_SIZE, TILE_SIZE},
+													 (Rectangle){layer->list[i].sp.x, layer->list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
         }
     }
 }
 
-void init(World* world)
+void init(World* world, Entity* player)
 {
 	SetTraceLogLevel(LOG_ERROR);
 	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "2D-Engine");
@@ -332,24 +179,27 @@ void init(World* world)
 	world->damage_buffs.size = 0;
 	world->interactables.size = 0;
 	world->entities.size = 0;
+	world->textures.size = 0;
 
 	world->spawn_rate = 60;
 	
-	world->entities.entities = malloc(INIT_ENTITY_CAP);
-	world->walls.list = malloc(INIT_TILE_CAP);
-	world->floors.list = malloc(INIT_TILE_CAP);
-	world->doors.list = malloc(INIT_TILE_CAP);
-	world->health_buffs.list = malloc(INIT_TILE_CAP);
-	world->damage_buffs.list = malloc(INIT_TILE_CAP);
-	world->interactables.list = malloc(INIT_TILE_CAP);
+	world->entities.entities = malloc(ENTITY_CAP);
+	world->walls.list = malloc(TILE_CAP);
+	world->floors.list = malloc(TILE_CAP);
+	world->doors.list = malloc(TILE_CAP);
+	world->health_buffs.list = malloc(TILE_CAP);
+	world->damage_buffs.list = malloc(TILE_CAP);
+	world->interactables.list = malloc(TILE_CAP);
 
-	world->entities.cap = INIT_ENTITY_CAP;
-    world->interactables.cap = (INIT_TILE_CAP);
-    world->walls.cap = (INIT_TILE_CAP);
-    world->floors.cap = (INIT_TILE_CAP);
-    world->doors.cap = (INIT_TILE_CAP);
-    world->health_buffs.cap = (INIT_TILE_CAP);
-    world->damage_buffs.cap = (INIT_TILE_CAP);
+	world->entities.cap = ENTITY_CAP;
+    world->interactables.cap = TILE_CAP;
+    world->walls.cap = TILE_CAP;
+    world->floors.cap = TILE_CAP;
+    world->doors.cap = TILE_CAP;
+    world->health_buffs.cap = TILE_CAP;
+    world->damage_buffs.cap = TILE_CAP;
+
+    loadLayers(world, WORLD_PATH);
 	
 	// getting spawn point
 	FILE* inFile = fopen(SPAWN_PATH, "r");
@@ -370,6 +220,20 @@ void init(World* world)
 		}
 	}
 
+	player->name = "player";
+	player->frame_count = 0;
+	player->health = 100;
+	player->speed = 5;
+	player->pos = (Vector2){world->spawn.x, world->spawn.y};
+	player->alive = true;
+	player->adjsp = false;
+	player->move = false;
+	player->tx = addTexture(&world->textures, PLAYER_PATH);
+	
+	player->camera.target = player->pos;
+	player->camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
+	player->camera.zoom = 1.75f;
+
 	fclose(inFile);
 }
 
@@ -383,7 +247,7 @@ void deinit(World *world)
 	free(world->interactables.list);
 	free(world->entities.entities);
 
-	for(int i = 0; i < TEXTURE_CAP; i++)
+	for(int i = 0; i < world->textures.size; i++)
 	{
 		UnloadTexture(world->textures.better_textures[i].tx);
 	}
@@ -391,7 +255,7 @@ void deinit(World *world)
 	CloseWindow();
 }
 
-enum Direction updateCoordinate(Entity* en, Entity* player)
+enum Direction updateCoordinate(World* world, Entity* en, Entity* player)
 {
 	switch (en->dir)
 	{
@@ -400,11 +264,29 @@ enum Direction updateCoordinate(Entity* en, Entity* player)
 			{
 				en->yfp = 0;
 				en->pos.y += en->speed;
+				for(int i = 0; i < world->walls.size; i++)
+				{
+					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
+					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
+					{
+						en->pos.y -= en->speed;
+						return LEFT_RIGHT;
+					}
+				}
 			}
 			if((int)en->pos.y > (int)player->pos.y)
 			{
 				en->yfp = 1;
 				en->pos.y -= en->speed;
+				for(int i = 0; i < world->walls.size; i++)
+				{
+					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
+					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
+					{
+						en->pos.y += en->speed;
+						return LEFT_RIGHT;
+					}
+				}
 			}
 			if((int)en->pos.y == (int)player->pos.y)
 			{
@@ -420,11 +302,29 @@ enum Direction updateCoordinate(Entity* en, Entity* player)
 			{
 				en->yfp = 2;
 				en->pos.x += en->speed;
+				for(int i = 0; i < world->walls.size; i++)
+				{
+					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
+					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
+					{
+						en->pos.x -= en->speed;
+						return UP_DOWN;
+					}
+				}
 			}
 			if((int)en->pos.x > (int)player->pos.x)
 			{
 				en->yfp = 3;
 				en->pos.x -= en->speed;
+				for(int i = 0; i < world->walls.size; i++)
+				{
+					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
+					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
+					{
+						en->pos.x += en->speed;
+						return UP_DOWN;
+					}
+				}
 			}
 			if((int)en->pos.x == (int)player->pos.x)
 			{
@@ -442,8 +342,38 @@ enum Direction updateCoordinate(Entity* en, Entity* player)
 	return -1;
 }
 
-void updateEntities(Entities* world_entities, Entity* player)
+int entityCollisionWorld(Entity* en, TileList* layer)
 {
+	for(int i = 0; i < layer->size; i++)
+	{
+		if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+							(Rectangle){layer->list[i].sp.x, layer->list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && layer->list[i].active)
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+int entityCollisionEntity(Entity* en, Entities* ents)
+{
+	for(int i = 0; i < ents->size; i++)
+	{
+		if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+							(Rectangle){ents->entities[i].pos.x, ents->entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && ents->entities[i].id != en->id)
+		{
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+void updateEntities(Entities* world_entities, Entity* player, World* world)
+{
+	int wall_col, en_col = -1;
+
 	for(int i = 0; i < world_entities->size; i++)
 	{
 		Entity* en = &world_entities->entities[i];
@@ -454,25 +384,95 @@ void updateEntities(Entities* world_entities, Entity* player)
 		{
 			en->frame_count = 0;
 			en->xfp = 0;
-			// xmv = true;
 		}
 
-		if(TimerDone(en->timer))
-		{
-			StartTimer(&en->timer, 1.25);
-			en->dir = (enum Direction)GetRandomValue(1, 2);
-		}
+		// if(TimerDone(en->timer))
+		// {
+		// 	StartTimer(&en->timer, 1.25);
+		// 	en->dir = (enum Direction)GetRandomValue(1, 2);
+		// }
 
 		// updating the direction of the enemy
-		en->dir = updateCoordinate(en, player);
+		// en->dir = updateCoordinate(world, en, player);
+
+		if(en->pos.x < player->pos.x)
+		{
+			en->pos.x += en->speed;
+			wall_col = entityCollisionWorld(en, &world->walls);
+			en_col = entityCollisionEntity(en, world_entities);
+			
+			if(wall_col >= 0)
+			{
+				en->pos.x -= en->speed;
+			}
+
+			if(en_col >= 0)
+			{
+				en->pos.x -=en->speed;
+			}
+		}
+		
+		if(en->pos.x > player->pos.x)
+		{
+			en->pos.x -= en->speed;
+			wall_col = entityCollisionWorld(en, &world->walls);
+			en_col = entityCollisionEntity(en, world_entities);
+			
+			if(wall_col >= 0)
+			{
+				en->pos.x += en->speed;
+			}
+
+			if(en_col >= 0)
+			{
+				en->pos.x +=en->speed;
+			}
+		}
+
+		if(en->pos.y < player->pos.y)
+		{
+			en->pos.y += en->speed;
+			wall_col = entityCollisionWorld(en, &world->walls);
+			en_col = entityCollisionEntity(en, world_entities);
+
+			if(wall_col >= 0)
+			{
+				en->pos.y -= en->speed;
+			}
+			
+			if(en_col >= 0)
+			{
+				en->pos.y -=en->speed;
+			}
+		}
+
+		if(en->pos.y > player->pos.y)
+		{
+			en->pos.y -= en->speed;
+			wall_col = entityCollisionWorld(en, &world->walls);
+			en_col = entityCollisionEntity(en, world_entities);
+
+			if(wall_col >= 0)
+			{
+				en->pos.y += en->speed;
+			}
+
+			if(en_col >= 0)
+			{
+				en->pos.y +=en->speed;
+			}
+		}
 
 		// drawing rectangle showing their health
 		DrawRectangle(en->pos.x + 5, en->pos.y - 7, 20 * (en->health / 100), 7, RED);
-		// health border
 		DrawRectangleLines(en->pos.x + 5, en->pos.y - 7, 20, 7, BLACK);
 
-		DrawTexturePro(en->tx, (Rectangle){en->xfp * TILE_SIZE, en->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
-							(Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+		// only draw entity when in bounds
+		if(CheckCollisionPointRec((Vector2){en->pos.x, en->pos.y}, world->area))
+		{
+			DrawTexturePro(en->tx, (Rectangle){en->xfp * TILE_SIZE, en->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
+										(Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+		}
 	}
 }
 
@@ -480,7 +480,6 @@ void updatePlayer(World* world, Entity* player)
 {
 	// animation
 	player->frame_count++;
-
 	player->xfp = (player->frame_count / ANIMATION_SPEED);
 	if(player->xfp > 3)
 	{
@@ -488,7 +487,7 @@ void updatePlayer(World* world, Entity* player)
 		player->frame_count = 0;
 	}
 
-	// movement
+	// flag for diagonal movement
     bool diagonal = (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) || 
                       (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) || 
                       (IsKeyDown(KEY_A) && IsKeyDown(KEY_S)) || 
@@ -498,13 +497,12 @@ void updatePlayer(World* world, Entity* player)
     {
         if (!player->adjsp)
         {
-			// pythag thm: 2x^2 - player's_peed^2 = 0, solve for x to find diag speed movement to prevent moving faster diagonly
-            float ns = sqrt(4 * (2) * (pow(player->speed, 2))) / 4;
-            player->speed = ns;
+			// through pythag thm: 2x^2 - player's speed^2 = 0, solve for x to find diag speed movement to prevent moving faster diagonly
+            player->speed = sqrt(4 * (2) * (pow(player->speed, 2))) / 4;
 			player->adjsp = true;
         }
-    } 
-				
+    }
+	
 	else
     {
         player->speed = 3;
@@ -516,13 +514,9 @@ void updatePlayer(World* world, Entity* player)
 		player->pos.y -= player->speed;
 		player->yfp = 1;
 		player->move = true;
-		for(int i = 0; i < world->walls.size; i++)
+		if(entityCollisionWorld(player, &world->walls) > 0)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-			{
-				player->pos.y += player->speed;
-			}
+			player->pos.y += player->speed;
 		}
 	}
 
@@ -531,13 +525,9 @@ void updatePlayer(World* world, Entity* player)
 		player->pos.x -= player->speed;
 		player->yfp = 3;
 		player->move = true;
-		for(int i = 0; i < world->walls.size; i++)
+		if(entityCollisionWorld(player, &world->walls) > 0)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-			{
-				player->pos.x += player->speed;
-			}
+			player->pos.x += player->speed;
 		}
 	}
 
@@ -546,13 +536,9 @@ void updatePlayer(World* world, Entity* player)
 		player->pos.y += player->speed;
 		player->yfp = 0;
 		player->move = true;
-		for(int i = 0; i < world->walls.size; i++)
+		if(entityCollisionWorld(player, &world->walls) > 0)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-			{
-				player->pos.y -= player->speed;
-			}
+			player->pos.y -= player->speed;
 		}
 	}
 
@@ -561,25 +547,21 @@ void updatePlayer(World* world, Entity* player)
 		player->pos.x += player->speed;
 		player->yfp = 2;
 		player->move = true;
-		for(int i = 0; i < world->walls.size; i++)
+		if(entityCollisionWorld(player, &world->walls) > 0)
 		{
-			if(CheckCollisionRecs((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-								 (Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-			{
-				player->pos.x -= player->speed;
-			}
+			player->pos.x -= player->speed;
 		}
 	}
 
-	// when afk, have sprite look forward facing user
+	// setting afk position
 	if(!player->move)
 	{
 		player->xfp = player->yfp = 0;
 	}
 
 	// drawing player
-		DrawTexturePro(player->tx, (Rectangle){player->xfp * TILE_SIZE, player->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
-										 (Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+	DrawTexturePro(player->tx, (Rectangle){player->xfp * TILE_SIZE, player->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
+										(Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
 	
 	// resetting movement flag
 	player->move = false;
@@ -588,54 +570,40 @@ void updatePlayer(World* world, Entity* player)
 int main()
 {
     World world;
-	world.textures.size = 0;
-	init(&world);
-    loadLayers(&world, WORLD_PATH);
-	Entity player = (Entity){"player", 0, 100, 5, (Vector2){world.spawn.x, world.spawn.y}, true, false, false, addTexture(&world.textures, PLAYER_PATH), 0};
+	Entity player;
 	Vector2 mp;
-	Rectangle world_rectangle;
-	Camera2D camera = {0};
-	// level bar header
-	char levelDsc[512];
-	camera.target = player.pos;
-	camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
-	camera.zoom = 1.75f;
+	init(&world, &player);
 
 	while(!WindowShouldClose())
     {
-		mp = GetScreenToWorld2D(GetMousePosition(), camera);
-		camera.target = player.pos;
-		camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
-
+		mp = GetScreenToWorld2D(GetMousePosition(), player.camera);
+		player.camera.target = player.pos;
+		world.area = (Rectangle){player.camera.target.x - player.camera.offset.x, player.camera.target.y - player.camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
+	   
 	    BeginDrawing();
-
             ClearBackground(WHITE);
-
-			BeginMode2D(camera);
-				world_rectangle = (Rectangle){camera.target.x - camera.offset.x, camera.target.y - camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
+			BeginMode2D(player.camera);
 				drawLayer(&world.floors);
 				drawLayer(&world.health_buffs);
 				drawLayer(&world.damage_buffs);
 				drawLayer(&world.doors);
 				drawLayer(&world.interactables);
 				drawLayer(&world.walls);
-				updateEntities(&world.entities, &player);
 				updatePlayer(&world, &player);
+				updateEntities(&world.entities, &player, &world);
 			EndMode2D();
 			
 			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
 			// using health buff
-			for(int i = 0; i < world.health_buffs.size; i++)
+			int h_col =  entityCollisionWorld(&player, &world.health_buffs);
+			if(h_col >= 0)
 			{
-				if(CheckCollisionRecs((Rectangle){player.pos.x, player.pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
-									(Rectangle){world.health_buffs.list[i].sp.x, world.health_buffs.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+				DrawText("PRESSING H WILL HEAL", GetScreenWidth() - 310, GetScreenHeight() - 110, 20, GREEN);
+				if(IsKeyPressed(KEY_H) && player.health < 100)
 				{
-					DrawText("PRESSING H WILL HEAL", GetScreenWidth() - 310, GetScreenHeight() - 110, 20, GREEN);
-					if(IsKeyPressed(KEY_H) && player.health < 100)
-					{
-						player.health = player.health + 20 > 100 ? 100 : player.health + 20;
-						removeTile(&world.health_buffs, i);
-					}
+					player.health = player.health + 20 > 100 ? 100 : player.health + 20;
+					world.health_buffs.list[h_col].active = false;
+					// removeTile(&world.health_buffs, h_col);
 				}
 			}
 
@@ -643,60 +611,84 @@ int main()
 			DrawRectangle(GetScreenWidth() - 310,GetScreenHeight() - 60, (300) * (player.health / 100),50, RED);
 			DrawRectangleLines(GetScreenWidth() - 310, GetScreenHeight() - 60, 300,50, BLACK);
 			DrawText("HEALTH", GetScreenWidth() - 300, GetScreenHeight() - 80, 20, RED);
-			DrawFPS(0, 0);
 			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
 
 			// --------------------------------------- FIGHT MECHANICS----------------------------------------//
-			// pressing E near an enemy will simulate doing damage
-			for(int i = 0; i < world.entities.size; i++)
+			int mob_col = entityCollisionEntity(&player, &world.entities);
+			if(mob_col >= 0)
 			{
-				if(CheckCollisionRecs((Rectangle){player.pos.x, player.pos.y, SCREEN_TILE_SIZE,SCREEN_TILE_SIZE},
-									 (Rectangle){world.entities.entities[i].pos.x, world.entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+				Entity* fight_en = &world.entities.entities[mob_col];
+				
+				// small window of invincibility after getting hit
+				if(TimerDone(player.timer))
 				{
-					// small window of invincibility after getting hit
-					if(TimerDone(player.timer))
-					{
-						StartTimer(&player.timer, 1.5);
-						player.health = (player.health - 20 < 0) ? 0 : player.health - 20;
-					}
+					StartTimer(&player.timer, 1.5);
+					player.health = (player.health - 20 < 0) ? 0 : player.health - 20;
+					// when you die
+					if(player.health == 0)
+					{}
+				}
 
-					if(IsKeyPressed(KEY_E))
+				// doing damage to mob
+				if(IsKeyPressed(KEY_E))
+				{
+					fight_en->health = fight_en->health - 20 > 0 ? fight_en->health - 20 : 0;
+					// killing an enemy
+					if(fight_en->health == 0)
 					{
-						world.entities.entities[i].health = world.entities.entities[i].health - 20 > 0 ? world.entities.entities[i].health - 20 : 0;
-						// killing an enemy
-						if(world.entities.entities[i].health == 0)
+						fight_en->alive = false;
+						fight_en->pos = (Vector2){INT_MIN, INT_MIN};
+						
+						// gaining experience/leveling up
+						player.exp += 20;
+						if(player.exp >= 100)
 						{
-							removeEntity(&world.entities, i);
-							// gaining experience/leveling up
-							player.exp += 20;
-							if(player.exp >= 100)
-							{
-								player.exp = 0;
-								player.level++;
-							}
+							player.exp = 0;
+							player.level++;
 						}
 					}
 				}
-
 			}
 			
 			// drawing and updating players level
 			DrawRectangle(10, GetScreenHeight() - 60, (300) * (player.exp / 100), 50, GREEN);
 			DrawRectangleLines(10, GetScreenHeight() - 60, 300, 50, BLACK);
-			sprintf(levelDsc, "LEVEL: %d", player.level);
-			DrawText(levelDsc, 10, GetScreenHeight() - 80, 20, GREEN);
+			
+			char lvl_dsc[100]; sprintf(lvl_dsc, "LEVEL: %d", player.level);
+			DrawText(lvl_dsc, 10, GetScreenHeight() - 80, 20, GREEN);
 			// --------------------------------------- FIGHT MECHANICS----------------------------------------//
 
 			// --------------------------------------- MOB MECHANICS----------------------------------------//
 			// creation of dummy enemies
-			if(CheckCollisionPointRec(mp, world_rectangle) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+			if(CheckCollisionPointRec(mp, world.area) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 			{
-				Timer ct;
-				StartTimer(&ct, 1);
-				addEntity(&world.entities, (Entity){"mob", 0, 100, 1, mp, true, false, false, addTexture(&world.textures, PLAYER_PATH), LEFT_RIGHT, ct, 0, 0});
+				// cant spawn mob in wall
+				bool valid_spawn = true;
+				for(int i = 0; i < world.walls.size; i++)
+				{
+					if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+										(Rectangle){world.walls.list[i].sp.x, world.walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+					{
+						valid_spawn = false;
+					}
+				}
+
+				if(valid_spawn)
+				{
+					Entity new_en;
+					new_en.name = "mob";
+					new_en.health = 100;
+					new_en.speed = 1;
+					new_en.pos = mp;
+					new_en.alive = true;
+					new_en.tx = addTexture(&world.textures, PLAYER_PATH);
+					new_en.id = GetRandomValue(0, INT_MAX);
+					addEntity(&world.entities, new_en);
+				}
 			}
 			// --------------------------------------- MOB MECHANICS----------------------------------------//
-        
+
+		DrawFPS(0, 0);			
 		EndDrawing();
     }
 
