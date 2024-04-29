@@ -14,9 +14,11 @@ enum Element
 
 enum Direction
 {
-	LEFT_RIGHT = 1,
-	UP_DOWN = 2,
-	DIAGONAL = 3,
+	UP = 0,
+	DOWN = 1,
+	LEFT = 2,
+	RIGHT= 3,
+	NONE = 4,
 };
 
 typedef struct
@@ -47,13 +49,19 @@ typedef struct
 	bool adjsp;
 	bool move;
 	Texture2D tx;
-	enum Direction dir;
+	enum Direction x_dir;
+	enum Direction y_dir;
 	Timer timer;
+	Timer moveTimer;
+	Vector2 path;
 	int xfp;
 	int yfp;
 	float exp;
 	int level;
 	int id;
+	float angle;
+	float dx;
+	float dy;
 	Camera2D camera;
 } Entity;
 

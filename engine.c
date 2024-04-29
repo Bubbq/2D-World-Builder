@@ -1,14 +1,17 @@
-#include "tile_generation.h"
 #include <math.h>
+#include <raylib.h>
+#include <raymath.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include "tile_generation.h"
 
 const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "world.txt";
+const char* WORLD_PATH = "demo.txt";
 const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
 
@@ -255,93 +258,6 @@ void deinit(World *world)
 	CloseWindow();
 }
 
-enum Direction updateCoordinate(World* world, Entity* en, Entity* player)
-{
-	switch (en->dir)
-	{
-		case UP_DOWN:
-			if((int)en->pos.y < (int)player->pos.y)
-			{
-				en->yfp = 0;
-				en->pos.y += en->speed;
-				for(int i = 0; i < world->walls.size; i++)
-				{
-					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
-					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
-					{
-						en->pos.y -= en->speed;
-						return LEFT_RIGHT;
-					}
-				}
-			}
-			if((int)en->pos.y > (int)player->pos.y)
-			{
-				en->yfp = 1;
-				en->pos.y -= en->speed;
-				for(int i = 0; i < world->walls.size; i++)
-				{
-					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
-					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
-					{
-						en->pos.y += en->speed;
-						return LEFT_RIGHT;
-					}
-				}
-			}
-			if((int)en->pos.y == (int)player->pos.y)
-			{
-				return LEFT_RIGHT;
-			}
-			else
-			{
-				return UP_DOWN;
-			}
-			break;
-		case LEFT_RIGHT:
-			if((int)en->pos.x < (int)player->pos.x)
-			{
-				en->yfp = 2;
-				en->pos.x += en->speed;
-				for(int i = 0; i < world->walls.size; i++)
-				{
-					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
-					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
-					{
-						en->pos.x -= en->speed;
-						return UP_DOWN;
-					}
-				}
-			}
-			if((int)en->pos.x > (int)player->pos.x)
-			{
-				en->yfp = 3;
-				en->pos.x -= en->speed;
-				for(int i = 0; i < world->walls.size; i++)
-				{
-					if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, 
-					(Rectangle){world->walls.list[i].sp.x,world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && world->entities.entities[i].id != en->id)
-					{
-						en->pos.x += en->speed;
-						return UP_DOWN;
-					}
-				}
-			}
-			if((int)en->pos.x == (int)player->pos.x)
-			{
-				return UP_DOWN;
-			}
-			else
-			{
-				return LEFT_RIGHT;
-			}
-			break;
-		default:
-			break;
-	}
-
-	return -1;
-}
-
 int entityCollisionWorld(Entity* en, TileList* layer)
 {
 	for(int i = 0; i < layer->size; i++)
@@ -360,7 +276,7 @@ int entityCollisionEntity(Entity* en, Entities* ents)
 {
 	for(int i = 0; i < ents->size; i++)
 	{
-		if(CheckCollisionRecs((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+		if(CheckCollisionPointRec((Vector2){en->pos.x + TILE_SIZE, en->pos.y + TILE_SIZE},
 							(Rectangle){ents->entities[i].pos.x, ents->entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && ents->entities[i].id != en->id)
 		{
 			return i;
@@ -386,82 +302,45 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 			en->xfp = 0;
 		}
 
-		// if(TimerDone(en->timer))
-		// {
-		// 	StartTimer(&en->timer, 1.25);
-		// 	en->dir = (enum Direction)GetRandomValue(1, 2);
-		// }
+		// find entities angle 
+		float dx = player->pos.x - en->pos.x;
+		float dy = player->pos.y - en->pos.y;
 
-		// updating the direction of the enemy
-		// en->dir = updateCoordinate(world, en, player);
+		// make it nearest number divisible by 32
+		en->angle = atan2f(dy, dx) * RAD2DEG;
 
-		if(en->pos.x < player->pos.x)
+		en->dx = cosf(en->angle * DEG2RAD) * en->speed;
+		en->dy = sinf(en->angle * DEG2RAD) * en->speed;
+
+		en->pos.x += en->dx;
+		wall_col = entityCollisionWorld(en, &world->walls);
+		en_col = entityCollisionEntity(en, &world->entities);
+
+		if(wall_col >= 0)
 		{
-			en->pos.x += en->speed;
-			wall_col = entityCollisionWorld(en, &world->walls);
-			en_col = entityCollisionEntity(en, world_entities);
-			
-			if(wall_col >= 0)
-			{
-				en->pos.x -= en->speed;
-			}
-
-			if(en_col >= 0)
-			{
-				en->pos.x -=en->speed;
-			}
-		}
-		
-		if(en->pos.x > player->pos.x)
-		{
-			en->pos.x -= en->speed;
-			wall_col = entityCollisionWorld(en, &world->walls);
-			en_col = entityCollisionEntity(en, world_entities);
-			
-			if(wall_col >= 0)
-			{
-				en->pos.x += en->speed;
-			}
-
-			if(en_col >= 0)
-			{
-				en->pos.x +=en->speed;
-			}
+			en->pos.x -= en->dx;
 		}
 
-		if(en->pos.y < player->pos.y)
+		if(en_col >= 0)
 		{
-			en->pos.y += en->speed;
-			wall_col = entityCollisionWorld(en, &world->walls);
-			en_col = entityCollisionEntity(en, world_entities);
-
-			if(wall_col >= 0)
-			{
-				en->pos.y -= en->speed;
-			}
-			
-			if(en_col >= 0)
-			{
-				en->pos.y -=en->speed;
-			}
+			en->pos.x -= en->dx;
 		}
 
-		if(en->pos.y > player->pos.y)
+		en->pos.y += en->dy;
+		wall_col = entityCollisionWorld(en, &world->walls);
+		en_col = entityCollisionEntity(en, &world->entities);
+
+		if(wall_col >= 0)
 		{
-			en->pos.y -= en->speed;
-			wall_col = entityCollisionWorld(en, &world->walls);
-			en_col = entityCollisionEntity(en, world_entities);
-
-			if(wall_col >= 0)
-			{
-				en->pos.y += en->speed;
-			}
-
-			if(en_col >= 0)
-			{
-				en->pos.y +=en->speed;
-			}
+			en->pos.y -= en->dy;
 		}
+
+		if(en_col >= 0)
+		{
+			en->pos.y -= en->dy;
+		}
+
+		DrawLine(en->pos.x + TILE_SIZE, en->pos.y + TILE_SIZE, en->pos.x + TILE_SIZE + (cosf(en->angle * DEG2RAD) * 40), en->pos.y +TILE_SIZE + (sinf(en->angle * DEG2RAD) * 40), RED);
 
 		// drawing rectangle showing their health
 		DrawRectangle(en->pos.x + 5, en->pos.y - 7, 20 * (en->health / 100), 7, RED);
@@ -581,7 +460,7 @@ int main()
 		world.area = (Rectangle){player.camera.target.x - player.camera.offset.x, player.camera.target.y - player.camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
 	   
 	    BeginDrawing();
-            ClearBackground(WHITE);
+            ClearBackground(BLANK);
 			BeginMode2D(player.camera);
 				drawLayer(&world.floors);
 				drawLayer(&world.health_buffs);
@@ -668,6 +547,16 @@ int main()
 				{
 					if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
 										(Rectangle){world.walls.list[i].sp.x, world.walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+					{
+						valid_spawn = false;
+					}
+				}
+
+				// cant spawn mobs on top of each other
+				for(int i = 0; i < world.entities.size; i++)
+				{
+					if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+									 (Rectangle){world.entities.entities[i].pos.x, world.entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
 					{
 						valid_spawn = false;
 					}

@@ -10,13 +10,10 @@
 #undef RAYGUI_IMPLEMENTATION
 #define GUI_WINDOW_FILE_DIALOG_IMPLEMENTATION
 #include "gui_window_file_dialog.h"
-
+#include "tile_generation.h"
 const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 const int PANEL_HEIGHT = 24;
-const int TILE_SIZE = 16;
-const float SCALE = 2.0f;
-const int SCREEN_TILE_SIZE = TILE_SIZE * SCALE;
 int DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
 
 int mpx, mpy = 0;
@@ -24,43 +21,16 @@ int mpx, mpy = 0;
 // mouse position relative to the 2d camera object
 Vector2 mp = {0};
 
-enum Element
-{
-	WALL = 0,
-	FLOOR = 1,
-	DOOR = 2,
-	HEALTH_BUFF = 3,
-	DAMAGE_BUFF = 4,
-	INTERACTABLE = 5,
-	SPAWN = 6,
-};
-
-typedef struct
-{
-	Vector2 src;
-	Vector2 sp;
-	Texture2D tx;
-	enum Element tt;
-	char fp[512];
-} Tile;
-
-typedef struct
-{
-	int size;
-	size_t cap;
-	Tile *list;
-} TileList;
-
-typedef struct
-{
-	TileList walls;
-	TileList floors;
-	TileList doors;
-	TileList health_buffs;
-	TileList damage_buffs;
-	TileList interactables;
-	Vector2 spawn;
-} World;
+// typedef struct
+// {
+// 	TileList walls;
+// 	TileList floors;
+// 	TileList doors;
+// 	TileList health_buffs;
+// 	TileList damage_buffs;
+// 	TileList interactables;
+// 	Vector2 spawn;
+// } World;
 
 void resizeLayer(TileList *layer)
 {
