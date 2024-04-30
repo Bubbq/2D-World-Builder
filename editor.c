@@ -11,6 +11,7 @@
 #define GUI_WINDOW_FILE_DIALOG_IMPLEMENTATION
 #include "gui_window_file_dialog.h"
 #include "tile_generation.h"
+
 const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 const int PANEL_HEIGHT = 24;
@@ -202,7 +203,7 @@ void selectTile(Rectangle side_panel, TileList *tile_dict, Tile *current_tile)
 }
 
 // to edit a specific layer by tile creation and/or deletion
-void editLayer(TileList *layer, Tile *current_tile, Rectangle *world_area,enum Element current_tile_type)
+void editLayer(TileList *layer, Tile *current_tile, Rectangle *world_area,enum Element current_tile_type, int frames)
 {
 	// creation
 	if (CheckCollisionPointRec(mp, *world_area))
@@ -223,25 +224,34 @@ void editLayer(TileList *layer, Tile *current_tile, Rectangle *world_area,enum E
 				}
 			}
 
+			// adding tile
 			if (to_add)
 			{
-				Tile tile = (Tile){current_tile->src, (Vector2){mpx, mpy}, current_tile->tx, current_tile_type, "NULL"};
+				Tile tile = (Tile){current_tile->src, (Vector2){mpx, mpy}, current_tile->tx, current_tile_type, "NULL", true};
 				strcpy(tile.fp, current_tile->fp);
 				addTile(layer, tile);
 			}
 		}
 	}
 
-	// deletion
 	int to_delete = -1;
 
 	for (int i = 0; i < layer->size; i++)
 	{
 		if (layer->list[i].tx.id != 0)
 		{
-			if (CheckCollisionPointRec(mp,(Rectangle){layer->list[i].sp.x, layer->list[i].sp.y,SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+			bool mouse_col = CheckCollisionPointRec(mp, (Rectangle){layer->list[i].sp.x, layer->list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE});
+			
+			// deletion
+			if (mouse_col && IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
 			{
 				to_delete = i;
+			}
+
+			// toggling animation
+			if(mouse_col && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_A) && frames > 0)
+			{
+				layer->list[i].anim = !layer->list[i].anim; layer->list[i].fc = 0; layer->list[i].frames = frames;
 			}
 		}
 	}
@@ -253,28 +263,28 @@ void editLayer(TileList *layer, Tile *current_tile, Rectangle *world_area,enum E
 	}
 }
 
-void editWorld(World *world, Rectangle world_area, Tile *current_tile,enum Element current_tile_type)
+void editWorld(World *world, Rectangle world_area, Tile *current_tile, enum Element current_tile_type, int frames)
 {
 	// edit corresp layer based on layer selection
 	switch (current_tile_type)
 	{
 		case WALL:
-			editLayer(&world->walls, current_tile, &world_area, current_tile_type);
+			editLayer(&world->walls, current_tile, &world_area, current_tile_type, frames);
 			break;
 		case FLOOR:
-			editLayer(&world->floors, current_tile, &world_area, current_tile_type);
+			editLayer(&world->floors, current_tile, &world_area, current_tile_type, frames);
 			break;
 		case DOOR:
-			editLayer(&world->doors, current_tile, &world_area, current_tile_type);
+			editLayer(&world->doors, current_tile, &world_area, current_tile_type, frames);
 			break;
 		case HEALTH_BUFF:
-			editLayer(&world->health_buffs, current_tile, &world_area,current_tile_type);
+			editLayer(&world->health_buffs, current_tile, &world_area,current_tile_type, frames);
 			break;
 		case DAMAGE_BUFF:
-			editLayer(&world->damage_buffs, current_tile, &world_area,current_tile_type);
+			editLayer(&world->damage_buffs, current_tile, &world_area,current_tile_type, frames);
 			break;
 		case INTERACTABLE:
-			editLayer(&world->interactables, current_tile, &world_area,current_tile_type);
+			editLayer(&world->interactables, current_tile, &world_area,current_tile_type, frames);
 			break;
 		// updating spawn point
 		case SPAWN:
@@ -282,6 +292,8 @@ void editWorld(World *world, Rectangle world_area, Tile *current_tile,enum Eleme
 			{
 				world->spawn = (Vector2){mpx, mpy};
 			}
+			break;
+		default:
 			break;
 	}
 }
@@ -291,11 +303,18 @@ void drawLayer(TileList *layer, Color color, Rectangle world_area,const char *ds
 	for (int i = 0; i < layer->size; i++)
 	{
 		// only draw tile if in bounds
-		if (layer->list[i].tx.id != 0 && layer->list[i].sp.x < world_area.x + world_area.width &&layer->list[i].sp.y < world_area.y + world_area.height)
+		if (layer->list[i].tx.id != 0 && (layer->list[i].sp.x < world_area.x + world_area.width) && (layer->list[i].sp.y < world_area.y + world_area.height))
 		{
 			DrawTexturePro(layer->list[i].tx,(Rectangle){layer->list[i].src.x, layer->list[i].src.y,TILE_SIZE, TILE_SIZE},(Rectangle){layer->list[i].sp.x, layer->list[i].sp.y,SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},(Vector2){0, 0}, 0, WHITE);
+			
 			// character describing what type of tile it is
 			DrawText(dsc,layer->list[i].sp.x + SCREEN_TILE_SIZE - MeasureText(dsc, 5),layer->list[i].sp.y + TILE_SIZE, 5, color);
+
+			if(layer->list[i].anim)
+			{
+				char animDsc[100]; sprintf(animDsc, "A(%d)", layer->list[i].frames);
+				DrawText(animDsc, layer->list[i].sp.x + (TILE_SIZE / 2.0f), layer->list[i].sp.y + TILE_SIZE, 5, BLACK);
+			}
 		}
 	}
 }
@@ -314,14 +333,14 @@ void saveLayer(TileList *layer, char *filePath)
 	{
 		if (layer->list[i].tx.id != 0)
 		{
-			fprintf(outFile, "%d,%d,%d,%d,%d,%s,\n", (int)layer->list[i].src.x,(int)layer->list[i].src.y, (int)layer->list[i].sp.x,(int)layer->list[i].sp.y, layer->list[i].tt, layer->list[i].fp);
+			fprintf(outFile, "%d,%d,%d,%d,%d,%s,%d,%d,%d\n", (int)layer->list[i].src.x,(int)layer->list[i].src.y, (int)layer->list[i].sp.x,(int)layer->list[i].sp.y, layer->list[i].tt, layer->list[i].fp, layer->list[i].anim, layer->list[i].fc, layer->list[i].frames);
 		}
 	}
 
 	fclose(outFile);
 }
 
-void loadLayers(World *world, Rectangle *world_area, char *filePath, TileList* tile_dict)
+void loadLayers(World *world, Rectangle *world_area, char *filePath)
 {
 	FILE *inFile = fopen(filePath, "r");
 	char line[512];
@@ -337,6 +356,9 @@ void loadLayers(World *world, Rectangle *world_area, char *filePath, TileList* t
 	enum Element tt;
 	char* fp ; 
 	char lfp[512];
+	bool anim;
+	int fc;
+	int frames;
 
 	while (fgets(line, sizeof(line), inFile))
 	{
@@ -346,6 +368,10 @@ void loadLayers(World *world, Rectangle *world_area, char *filePath, TileList* t
 		sp.y = atoi(strtok(NULL, ","));
 		tt = (enum Element)atoi(strtok(NULL, ","));
 		fp = strtok(NULL, ",");
+		anim = atoi(strtok(NULL, ","));
+		fc = atoi(strtok(NULL, ","));
+		frames = atoi(strtok(NULL, ","));
+		
 		tx = LoadTexture(fp);
 		
 		if(strcmp(lfp, fp) != 0)
@@ -354,7 +380,7 @@ void loadLayers(World *world, Rectangle *world_area, char *filePath, TileList* t
 			strcpy(lfp, fp);
 		}
 
-        Tile tile = (Tile){src, sp, tx, tt, "NULL"};
+        Tile tile = (Tile){src, sp, tx, tt, "NULL", true, anim, fc, frames};
         strcpy(tile.fp, fp);
 
 		// adj world size if loading world larger than init size
@@ -458,6 +484,7 @@ int main()
 	bool showInputTextBox = false;
 	bool edit = false;
 	int current_layer;
+	int frames = 0;
 	Texture current_texture = {0};
 	Camera2D camera = {0};
 	camera.zoom = 1.0f;
@@ -507,7 +534,7 @@ int main()
 				eraseLayer(&world.interactables);
 
 				current_tile = (Tile){0};
-				loadLayers(&world, &world_area, fileDialogState.fileNameText, &tile_dict);
+				loadLayers(&world, &world_area, fileDialogState.fileNameText);
 			}
 
 			fileDialogState.SelectFilePressed = false;
@@ -523,7 +550,7 @@ int main()
 
 			if(edit)
 			{
-				editWorld(&world, world_area, &current_tile, (enum Element)current_layer);
+				editWorld(&world, world_area, &current_tile, (enum Element)current_layer, frames);
 			}
 
 			// drawing each layer
@@ -538,17 +565,22 @@ int main()
 
 		EndMode2D();
 
-		// deleting world
-		if(IsKeyPressed(KEY_A))
+		if(IsKeyPressed(KEY_F))
 		{
-			eraseLayer(&world.walls);
-			eraseLayer(&world.floors);
-			eraseLayer(&world.doors);
-			eraseLayer(&world.health_buffs);
-			eraseLayer(&world.damage_buffs);
-			eraseLayer(&world.interactables);
-			current_tile = (Tile){ 0 };
+			current_tile = (Tile){0};
 		}
+
+		// deleting world
+		// if(IsKeyPressed(KEY_A))
+		// {
+		// 	eraseLayer(&world.walls);
+		// 	eraseLayer(&world.floors);
+		// 	eraseLayer(&world.doors);
+		// 	eraseLayer(&world.health_buffs);
+		// 	eraseLayer(&world.damage_buffs);
+		// 	eraseLayer(&world.interactables);
+		// 	current_tile = (Tile){ 0 };
+		// }
 
 		if(edit)
 		{
@@ -562,11 +594,29 @@ int main()
 
 		// choosing the tile to edit the world with
 		selectTile(side_panel, &tile_dict, &current_tile);
+		
 		// choosing which layer to  add to
 		GuiPanel(layer_panel, "LAYER TO EDIT");
-		GuiToggleGroup((Rectangle){GetScreenWidth() - SCREEN_TILE_SIZE * 5.0f,SCREEN_TILE_SIZE + PANEL_HEIGHT + TILE_SIZE,SCREEN_TILE_SIZE * 4.0f, 24},"WALLS \n FLOORS \n DOORS \n BUFFS (HEALTH) \n BUFFS (DAMAGE) ""\n INTERACTABLES \n SPAWN POINT",&current_layer);
+		
+		GuiToggleGroup((Rectangle){GetScreenWidth() - SCREEN_TILE_SIZE * 5.0f,SCREEN_TILE_SIZE + PANEL_HEIGHT + TILE_SIZE,SCREEN_TILE_SIZE * 4.0f, 24},"WALLS \n FLOORS \n DOORS \n BUFFS (HEALTH) \n BUFFS (DAMAGE) \n INTERACTABLES \n SPAWN POINT",&current_layer);
+
 		// changing the size of the world
 		changeWorldSize(&world_area, edit_map_size_panel);
+
+		GuiPanel((Rectangle){edit_map_size_panel.x, edit_map_size_panel.y + (SCREEN_TILE_SIZE * 6), edit_map_size_panel.width, (edit_map_size_panel.height / 2.0f)}, "Number of Frames");
+
+		if(GuiButton((Rectangle){edit_map_size_panel.x + 10, edit_map_size_panel.y + (SCREEN_TILE_SIZE * 7), 30, 30}, "+"))
+		{
+			frames++;
+		}
+
+		if(GuiButton((Rectangle){edit_map_size_panel.x + 60, edit_map_size_panel.y + (SCREEN_TILE_SIZE * 7), 30, 30}, "-") && frames > 0)
+		{
+			frames--;
+		}
+
+		char frameDsc[512]; sprintf(frameDsc, "%d", frames);
+		DrawText(frameDsc, edit_map_size_panel.x + 120, edit_map_size_panel.y + (SCREEN_TILE_SIZE * 7.25), 15, BLACK);
 
 		if (fileDialogState.windowActive) GuiLock();
 

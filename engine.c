@@ -1,6 +1,7 @@
 #include <math.h>
 #include <raylib.h>
 #include <raymath.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,11 +12,11 @@ const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "demo.txt";
+const char* WORLD_PATH = "test6.txt";
 const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
 
-const int ANIMATION_SPEED = 20;
+const int ANIMATION_SPEED = 10;
 const int FPS = 60;
 
 void StartTimer(Timer *timer, double lifetime)
@@ -115,6 +116,9 @@ void loadLayers(World* world, const char* filePath)
     Vector2 sp;
     enum Element tt;
     char* fp;
+	bool anim;
+	int fc;
+	int frames;
 	// the position of the texture in Textures array to load for a tile
 
     while(fgets(line, sizeof(line), inFile))
@@ -125,8 +129,11 @@ void loadLayers(World* world, const char* filePath)
         sp.y = atoi(strtok(NULL, ","));
         tt = (enum Element)atoi(strtok(NULL, ","));
         fp = strtok(NULL, ",");
+		anim = atoi(strtok(NULL, ","));
+		fc = atoi(strtok(NULL, ","));
+		frames = atoi(strtok(NULL, ","));
 
-        Tile tile = (Tile){src, sp, addTexture(&world->textures, fp), tt, "NULL", true};
+        Tile tile = (Tile){src, sp, addTexture(&world->textures, fp), tt, "NULL",true, anim, fc, frames};
         strcpy(tile.fp, fp);
 
         switch (tt)
@@ -163,7 +170,20 @@ void drawLayer(TileList* layer)
     {
         if(layer->list[i].tx.id > 0 && layer->list[i].active)
         {
-            DrawTexturePro(layer->list[i].tx, (Rectangle){layer->list[i].src.x, layer->list[i].src.y, TILE_SIZE, TILE_SIZE},
+			int frame_pos = 0;
+			// animate
+			if(layer->list[i].anim)
+			{
+				layer->list[i].fc++;
+				frame_pos = layer->list[i].fc / ANIMATION_SPEED;
+				if(frame_pos > layer->list[i].frames)
+				{
+					frame_pos = 0;
+					layer->list[i].fc = 0;
+				}
+			}
+
+            DrawTexturePro(layer->list[i].tx, (Rectangle){layer->list[i].src.x + (frame_pos * TILE_SIZE), layer->list[i].src.y, TILE_SIZE, TILE_SIZE},
 													 (Rectangle){layer->list[i].sp.x, layer->list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
         }
     }
@@ -309,6 +329,38 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 		// make it nearest number divisible by 32
 		en->angle = atan2f(dy, dx) * RAD2DEG;
 
+		// angle correction
+		if(en->angle > 360)
+		{
+			en->angle -= 360;
+		}
+
+		if(en->angle < 0)
+		{
+			en->angle += 360;
+		}
+
+		// setting sprite direction based on angle
+		if(en->angle > 45 && en->angle < 135)
+		{
+			en->yfp = 0;
+		}
+		
+		else if(en->angle > 225 && en->angle < 315)
+		{
+			en->yfp = 1;
+		}
+
+		else if(en->angle > 135 && en->angle < 215)
+		{
+			en->yfp = 3;
+		}
+
+		else
+		{
+			en->yfp = 2;
+		}
+
 		en->dx = cosf(en->angle * DEG2RAD) * en->speed;
 		en->dy = sinf(en->angle * DEG2RAD) * en->speed;
 
@@ -339,8 +391,6 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 		{
 			en->pos.y -= en->dy;
 		}
-
-		DrawLine(en->pos.x + TILE_SIZE, en->pos.y + TILE_SIZE, en->pos.x + TILE_SIZE + (cosf(en->angle * DEG2RAD) * 40), en->pos.y +TILE_SIZE + (sinf(en->angle * DEG2RAD) * 40), RED);
 
 		// drawing rectangle showing their health
 		DrawRectangle(en->pos.x + 5, en->pos.y - 7, 20 * (en->health / 100), 7, RED);
@@ -482,7 +532,6 @@ int main()
 				{
 					player.health = player.health + 20 > 100 ? 100 : player.health + 20;
 					world.health_buffs.list[h_col].active = false;
-					// removeTile(&world.health_buffs, h_col);
 				}
 			}
 

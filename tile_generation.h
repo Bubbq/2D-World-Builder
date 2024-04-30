@@ -29,6 +29,9 @@ typedef struct
 	enum Element tt;
 	char fp[512];
 	bool active;
+	bool anim;
+	int fc;
+	int frames;
 } Tile;
 
 typedef struct
@@ -49,8 +52,6 @@ typedef struct
 	bool adjsp;
 	bool move;
 	Texture2D tx;
-	enum Direction x_dir;
-	enum Direction y_dir;
 	Timer timer;
 	Timer moveTimer;
 	Vector2 path;
