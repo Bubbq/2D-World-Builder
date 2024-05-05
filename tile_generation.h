@@ -12,15 +12,6 @@ enum Element
 	SPAWN = 6,
 };
 
-enum Direction
-{
-	UP = 0,
-	DOWN = 1,
-	LEFT = 2,
-	RIGHT= 3,
-	NONE = 4,
-};
-
 typedef struct
 {
 	Vector2 src;
@@ -32,6 +23,7 @@ typedef struct
 	bool anim;
 	int fc;
 	int frames;
+	int anim_speed;
 } Tile;
 
 typedef struct

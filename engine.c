@@ -9,7 +9,7 @@ const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "test.txt";
+const char* WORLD_PATH = "test2.txt";
 const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
 
@@ -94,7 +94,6 @@ Texture2D addTexture(Textures* textures, const char* filePath)
 
 	// if we already have this tile, use it at that index, if not, the newest texture should hold the correct one to load
 	ctxi = (ctxi == -1) ? (textures->size - 1) : ctxi;
-	printf("%s, %d, %d\n", filePath, ctxi, textures->better_textures[ctxi].tx.id);
 
 	// return the texture of new or recurring element
 	return textures->better_textures[ctxi].tx;
@@ -117,7 +116,7 @@ void loadLayers(World* world, const char* filePath)
 	bool anim;
 	int fc;
 	int frames;
-	// the position of the texture in Textures array to load for a tile
+	int anim_speed;
 
     while(fgets(line, sizeof(line), inFile))
     {
@@ -130,8 +129,9 @@ void loadLayers(World* world, const char* filePath)
 		anim = atoi(strtok(NULL, ","));
 		fc = atoi(strtok(NULL, ","));
 		frames = atoi(strtok(NULL, ","));
+		anim_speed = atoi(strtok(NULL, "\n"));
 
-        Tile tile = (Tile){src, sp, addTexture(&world->textures, fp), tt, "NULL",true, anim, fc, frames};
+        Tile tile = (Tile){src, sp, addTexture(&world->textures, fp), tt, "NULL",true, anim, fc, frames, anim_speed};
         strcpy(tile.fp, fp);
 
         switch (tt)
@@ -174,7 +174,7 @@ void drawLayer(TileList* layer)
 			if(layer->list[i].anim)
 			{
 				layer->list[i].fc++;
-				frame_pos = layer->list[i].fc / ANIMATION_SPEED;
+				frame_pos = layer->list[i].fc / layer->list[i].anim_speed;
 				if(frame_pos > layer->list[i].frames)
 				{
 					frame_pos = 0;
@@ -190,7 +190,7 @@ void drawLayer(TileList* layer)
 
 void init(World* world, Entity* player)
 {
-	// SetTraceLogLevel(LOG_ERROR);
+	SetTraceLogLevel(LOG_ERROR);
 	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "2D-Engine");
 	SetTargetFPS(FPS);
 
@@ -634,7 +634,6 @@ int main()
 
 		// fight mechanics
 		fight(&player, &world.entities);
-
 
 	    BeginDrawing();
 
