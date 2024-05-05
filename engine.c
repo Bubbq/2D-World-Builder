@@ -1,22 +1,19 @@
 #include <math.h>
 #include <raylib.h>
-#include <raymath.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
 #include "tile_generation.h"
 
 const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "test6.txt";
+const char* WORLD_PATH = "test.txt";
 const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
 
-const int ANIMATION_SPEED = 10;
+const int ANIMATION_SPEED = 20;
 const int FPS = 60;
 
 void StartTimer(Timer *timer, double lifetime)
@@ -97,6 +94,7 @@ Texture2D addTexture(Textures* textures, const char* filePath)
 
 	// if we already have this tile, use it at that index, if not, the newest texture should hold the correct one to load
 	ctxi = (ctxi == -1) ? (textures->size - 1) : ctxi;
+	printf("%s, %d, %d\n", filePath, ctxi, textures->better_textures[ctxi].tx.id);
 
 	// return the texture of new or recurring element
 	return textures->better_textures[ctxi].tx;
@@ -171,7 +169,8 @@ void drawLayer(TileList* layer)
         if(layer->list[i].tx.id > 0 && layer->list[i].active)
         {
 			int frame_pos = 0;
-			// animate
+
+			// animate tiles
 			if(layer->list[i].anim)
 			{
 				layer->list[i].fc++;
@@ -191,7 +190,7 @@ void drawLayer(TileList* layer)
 
 void init(World* world, Entity* player)
 {
-	SetTraceLogLevel(LOG_ERROR);
+	// SetTraceLogLevel(LOG_ERROR);
 	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "2D-Engine");
 	SetTargetFPS(FPS);
 
@@ -278,6 +277,7 @@ void deinit(World *world)
 	CloseWindow();
 }
 
+// returns the index of the tile of a layer you collided with
 int entityCollisionWorld(Entity* en, TileList* layer)
 {
 	for(int i = 0; i < layer->size; i++)
@@ -292,6 +292,7 @@ int entityCollisionWorld(Entity* en, TileList* layer)
 	return -1;
 }
 
+// returns index of entity that an entity 'en' has collided with
 int entityCollisionEntity(Entity* en, Entities* ents)
 {
 	for(int i = 0; i < ents->size; i++)
@@ -313,8 +314,13 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 	for(int i = 0; i < world_entities->size; i++)
 	{
 		Entity* en = &world_entities->entities[i];
-		en->frame_count++;
+		
+		if(!en->alive)
+		{
+			continue;
+		}
 
+		en->frame_count++;
 		en->xfp = (en->frame_count / ANIMATION_SPEED);
 		if(en->xfp > 3)
 		{
@@ -368,12 +374,7 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 		wall_col = entityCollisionWorld(en, &world->walls);
 		en_col = entityCollisionEntity(en, &world->entities);
 
-		if(wall_col >= 0)
-		{
-			en->pos.x -= en->dx;
-		}
-
-		if(en_col >= 0)
+		if(wall_col >= 0 || en_col >= 0)
 		{
 			en->pos.x -= en->dx;
 		}
@@ -382,12 +383,7 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 		wall_col = entityCollisionWorld(en, &world->walls);
 		en_col = entityCollisionEntity(en, &world->entities);
 
-		if(wall_col >= 0)
-		{
-			en->pos.y -= en->dy;
-		}
-
-		if(en_col >= 0)
+		if(wall_col >= 0 || en_col >= 0)
 		{
 			en->pos.y -= en->dy;
 		}
@@ -405,29 +401,20 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 	}
 }
 
-void updatePlayer(World* world, Entity* player)
+void move(TileList* world_walls, Entity* player)
 {
-	// animation
-	player->frame_count++;
-	player->xfp = (player->frame_count / ANIMATION_SPEED);
-	if(player->xfp > 3)
-	{
-		player->xfp = 0;
-		player->frame_count = 0;
-	}
-
 	// flag for diagonal movement
     bool diagonal = (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) || 
                       (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) || 
-                      (IsKeyDown(KEY_A) && IsKeyDown(KEY_S)) || 
-                      (IsKeyDown(KEY_S) && IsKeyDown(KEY_D));
+                      	(IsKeyDown(KEY_A) && IsKeyDown(KEY_S)) || 
+                      		(IsKeyDown(KEY_S) && IsKeyDown(KEY_D));
 
     if (diagonal)
     {
         if (!player->adjsp)
         {
 			// through pythag thm: 2x^2 - player's speed^2 = 0, solve for x to find diag speed movement to prevent moving faster diagonly
-            player->speed = sqrt(4 * (2) * (pow(player->speed, 2))) / 4;
+            player->speed = sqrt(8 * (pow(player->speed, 2))) / 4;
 			player->adjsp = true;
         }
     }
@@ -437,13 +424,17 @@ void updatePlayer(World* world, Entity* player)
         player->speed = 3;
 		player->adjsp = false;
     }
+	
+	int wall_col = -1;
 
 	if(IsKeyDown(KEY_W))
 	{
 		player->pos.y -= player->speed;
 		player->yfp = 1;
 		player->move = true;
-		if(entityCollisionWorld(player, &world->walls) > 0)
+
+		wall_col = entityCollisionWorld(player, world_walls);
+		if(wall_col >= 0)
 		{
 			player->pos.y += player->speed;
 		}
@@ -454,7 +445,9 @@ void updatePlayer(World* world, Entity* player)
 		player->pos.x -= player->speed;
 		player->yfp = 3;
 		player->move = true;
-		if(entityCollisionWorld(player, &world->walls) > 0)
+
+		wall_col = entityCollisionWorld(player, world_walls);
+		if(wall_col >+ 0)
 		{
 			player->pos.x += player->speed;
 		}
@@ -465,7 +458,9 @@ void updatePlayer(World* world, Entity* player)
 		player->pos.y += player->speed;
 		player->yfp = 0;
 		player->move = true;
-		if(entityCollisionWorld(player, &world->walls) > 0)
+
+		wall_col = entityCollisionWorld(player, world_walls);
+		if(wall_col >= 0)
 		{
 			player->pos.y -= player->speed;
 		}
@@ -476,7 +471,9 @@ void updatePlayer(World* world, Entity* player)
 		player->pos.x += player->speed;
 		player->yfp = 2;
 		player->move = true;
-		if(entityCollisionWorld(player, &world->walls) > 0)
+
+		wall_col = entityCollisionWorld(player, world_walls);
+		if(wall_col >= 0)
 		{
 			player->pos.x -= player->speed;
 		}
@@ -488,12 +485,135 @@ void updatePlayer(World* world, Entity* player)
 		player->xfp = player->yfp = 0;
 	}
 
+	// resetting movement flag
+	player->move = false;
+}
+
+void heal(TileList* world_heals, Entity* player)
+{
+	int h_col =  entityCollisionWorld(player, world_heals);
+	if(h_col >= 0)
+	{
+		DrawText("PRESSING H WILL HEAL", GetScreenWidth() - 310, GetScreenHeight() - 110, 20, GREEN);
+		if(IsKeyPressed(KEY_H) && player->health < 100)
+		{
+			player->health = player->health + 20 > 100 ? 100 : player->health + 20;
+			world_heals->list[h_col].active = false;
+		}
+	}
+
+	// drawing the player's health bar
+	DrawRectangle(GetScreenWidth() - 310, GetScreenHeight() - 60, (300) * (player->health / 100),50, RED);
+	DrawRectangleLines(GetScreenWidth() - 310, GetScreenHeight() - 60, 300,50, BLACK);
+	DrawText("HEALTH", GetScreenWidth() - 300, GetScreenHeight() - 80, 20, RED);
+}
+
+void fight(Entity* player, Entities* enemies)
+{
+		int mob_col = entityCollisionEntity(player, enemies);
+		if(mob_col >= 0)
+		{
+			Entity* fight_en = &enemies->entities[mob_col];
+			
+			// small window of invincibility after getting hit
+			if(TimerDone(player->timer))
+			{
+				StartTimer(&player->timer, 1.5);
+				player->health = (player->health - 20 < 0) ? 0 : player->health - 20;
+				
+				// when you die
+				if(player->health == 0)
+				{
+					player->alive = false;
+				}
+			}
+
+			// doing damage to mob
+			if(IsKeyPressed(KEY_E))
+			{
+				fight_en->health = fight_en->health - 20 > 0 ? fight_en->health - 20 : 0;
+				
+				// killing an enemy
+				if(fight_en->health == 0)
+				{
+					fight_en->alive = false;
+					fight_en->pos = (Vector2){-1000000, -1000000};
+					
+					// gaining experience/leveling up
+					player->exp += 20;
+					if(player->exp >= 100)
+					{
+						player->exp = 0;
+						player->level++;
+					}
+				}
+			}
+		}
+		
+		// drawing and updating players level
+		DrawRectangle(10, GetScreenHeight() - 60, (300) * (player->exp / 100), 50, GREEN);
+		DrawRectangleLines(10, GetScreenHeight() - 60, 300, 50, BLACK);
+		
+		char lvl_dsc[100]; sprintf(lvl_dsc, "LEVEL: %d", player->level);
+		DrawText(lvl_dsc, 10, GetScreenHeight() - 80, 20, GREEN);
+}
+
+void mobCreation(Vector2 mp, World* world)
+{
+	if(CheckCollisionPointRec(mp, world->area) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+	{
+		// cant spawn mob in wall
+		bool valid_spawn = true;
+		for(int i = 0; i < world->walls.size; i++)
+		{
+			if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+								(Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+			{
+				valid_spawn = false;
+			}
+		}
+
+		// cant spawn mobs on top of each other
+		for(int i = 0; i < world->entities.size; i++)
+		{
+			if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+								(Rectangle){world->entities.entities[i].pos.x, world->entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+			{
+				valid_spawn = false;
+			}
+		}
+
+		if(valid_spawn)
+		{
+			Entity new_en;
+			new_en.name = "mob";
+			new_en.health = 100;
+			new_en.speed = 1;
+			new_en.pos = mp;
+			new_en.alive = true;
+			new_en.tx = addTexture(&world->textures, PLAYER_PATH);
+			new_en.id = GetRandomValue(0, 1000000000);
+			addEntity(&world->entities, new_en);
+		}
+	}
+}
+
+void updatePlayer(TileList* world_walls, Entity* player)
+{
+	// animation
+	player->frame_count++;
+	player->xfp = (player->frame_count / ANIMATION_SPEED);
+	if(player->xfp > 3)
+	{
+		player->xfp = 0;
+		player->frame_count = 0;
+	}
+	
+	move(world_walls, player);
+
 	// drawing player
 	DrawTexturePro(player->tx, (Rectangle){player->xfp * TILE_SIZE, player->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
 										(Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
-	
-	// resetting movement flag
-	player->move = false;
 }
 
 int main()
@@ -510,123 +630,82 @@ int main()
 		world.area = (Rectangle){player.camera.target.x - player.camera.offset.x, player.camera.target.y - player.camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
 	   
 	    BeginDrawing();
-            ClearBackground(BLANK);
-			BeginMode2D(player.camera);
-				drawLayer(&world.floors);
-				drawLayer(&world.health_buffs);
-				drawLayer(&world.damage_buffs);
-				drawLayer(&world.doors);
-				drawLayer(&world.interactables);
-				drawLayer(&world.walls);
-				updatePlayer(&world, &player);
-				updateEntities(&world.entities, &player, &world);
-			EndMode2D();
-			
-			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
-			// using health buff
-			int h_col =  entityCollisionWorld(&player, &world.health_buffs);
-			if(h_col >= 0)
-			{
-				DrawText("PRESSING H WILL HEAL", GetScreenWidth() - 310, GetScreenHeight() - 110, 20, GREEN);
-				if(IsKeyPressed(KEY_H) && player.health < 100)
-				{
-					player.health = player.health + 20 > 100 ? 100 : player.health + 20;
-					world.health_buffs.list[h_col].active = false;
-				}
-			}
 
-			// drawing the player's health bar
-			DrawRectangle(GetScreenWidth() - 310,GetScreenHeight() - 60, (300) * (player.health / 100),50, RED);
-			DrawRectangleLines(GetScreenWidth() - 310, GetScreenHeight() - 60, 300,50, BLACK);
-			DrawText("HEALTH", GetScreenWidth() - 300, GetScreenHeight() - 80, 20, RED);
-			// --------------------------------------- HEALTH MECHANICS----------------------------------------//
-
-			// --------------------------------------- FIGHT MECHANICS----------------------------------------//
-			int mob_col = entityCollisionEntity(&player, &world.entities);
-			if(mob_col >= 0)
+			if(player.alive)
 			{
-				Entity* fight_en = &world.entities.entities[mob_col];
+				ClearBackground(BLACK);
+				BeginMode2D(player.camera);
+					drawLayer(&world.floors);
+					drawLayer(&world.health_buffs);
+					drawLayer(&world.damage_buffs);
+					drawLayer(&world.doors);
+					drawLayer(&world.interactables);
+					drawLayer(&world.walls);
+					updatePlayer(&world.walls, &player);
+					updateEntities(&world.entities, &player, &world);
+				EndMode2D();
 				
-				// small window of invincibility after getting hit
-				if(TimerDone(player.timer))
-				{
-					StartTimer(&player.timer, 1.5);
-					player.health = (player.health - 20 < 0) ? 0 : player.health - 20;
-					// when you die
-					if(player.health == 0)
-					{}
-				}
+				// mechanics for player to heal
+				heal(&world.health_buffs, &player);
 
-				// doing damage to mob
-				if(IsKeyPressed(KEY_E))
+				// fight mechanics
+				fight(&player, &world.entities);
+
+				// making enemies to fight
+				// mobCreation(mp, &world);
+
+				if(CheckCollisionPointRec(mp, world.area) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 				{
-					fight_en->health = fight_en->health - 20 > 0 ? fight_en->health - 20 : 0;
-					// killing an enemy
-					if(fight_en->health == 0)
+					// cant spawn mob in wall
+					bool valid_spawn = true;
+					for(int i = 0; i < world.walls.size; i++)
 					{
-						fight_en->alive = false;
-						fight_en->pos = (Vector2){INT_MIN, INT_MIN};
-						
-						// gaining experience/leveling up
-						player.exp += 20;
-						if(player.exp >= 100)
+						if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+											(Rectangle){world.walls.list[i].sp.x, world.walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
 						{
-							player.exp = 0;
-							player.level++;
+							valid_spawn = false;
 						}
 					}
+
+					// cant spawn mobs on top of each other
+					for(int i = 0; i < world.entities.size; i++)
+					{
+						if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
+											(Rectangle){world.entities.entities[i].pos.x, world.entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
+						{
+							valid_spawn = false;
+						}
+					}
+
+					if(valid_spawn)
+					{
+						Entity new_en;
+						new_en.name = "mob";
+						new_en.health = 100;
+						new_en.speed = 1;
+						new_en.pos = mp;
+						new_en.alive = true;
+						new_en.tx = addTexture(&world.textures, PLAYER_PATH);
+						new_en.id = GetRandomValue(0, 1000000000);
+						addEntity(&world.entities, new_en);
+					}
 				}
 			}
-			
-			// drawing and updating players level
-			DrawRectangle(10, GetScreenHeight() - 60, (300) * (player.exp / 100), 50, GREEN);
-			DrawRectangleLines(10, GetScreenHeight() - 60, 300, 50, BLACK);
-			
-			char lvl_dsc[100]; sprintf(lvl_dsc, "LEVEL: %d", player.level);
-			DrawText(lvl_dsc, 10, GetScreenHeight() - 80, 20, GREEN);
-			// --------------------------------------- FIGHT MECHANICS----------------------------------------//
 
-			// --------------------------------------- MOB MECHANICS----------------------------------------//
-			// creation of dummy enemies
-			if(CheckCollisionPointRec(mp, world.area) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+			else
 			{
-				// cant spawn mob in wall
-				bool valid_spawn = true;
-				for(int i = 0; i < world.walls.size; i++)
+				ClearBackground(GRAY);
+				const char* prompt = "YOU DIED, RESPAWN? (press enter)"; 
+				DrawText(prompt, (GetScreenWidth() / 2.0f) - (MeasureText(prompt, 30) / 2.0f), GetScreenHeight() / 2.0f, 30, RED);
+				if(IsKeyPressed(KEY_ENTER))
 				{
-					if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-										(Rectangle){world.walls.list[i].sp.x, world.walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-					{
-						valid_spawn = false;
-					}
-				}
-
-				// cant spawn mobs on top of each other
-				for(int i = 0; i < world.entities.size; i++)
-				{
-					if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-									 (Rectangle){world.entities.entities[i].pos.x, world.entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-					{
-						valid_spawn = false;
-					}
-				}
-
-				if(valid_spawn)
-				{
-					Entity new_en;
-					new_en.name = "mob";
-					new_en.health = 100;
-					new_en.speed = 1;
-					new_en.pos = mp;
-					new_en.alive = true;
-					new_en.tx = addTexture(&world.textures, PLAYER_PATH);
-					new_en.id = GetRandomValue(0, INT_MAX);
-					addEntity(&world.entities, new_en);
+					player.alive = true;
+					player.health = 100;
+					player.level = 0;
 				}
 			}
-			// --------------------------------------- MOB MECHANICS----------------------------------------//
 
-		DrawFPS(0, 0);			
+		DrawFPS(0, 0);
 		EndDrawing();
     }
 

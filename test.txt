@@ -120,6 +120,8 @@
 32,48,576,384,1,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_Tileset_v2.png,0,0,0
 80,48,416,224,2,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,0,0,0
 96,48,448,224,2,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,0,0,0
+128,48,480,288,3,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,0,0,0
+128,48,384,288,3,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/character and tileset/Dungeon_item_props_v2.png,0,0,0
 64,0,448,96,5,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/items_animation/keys_g.png,0,0,1
 0,0,416,32,5,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/items_animation/flag_r.png,1,0,10
 0,0,384,32,5,/home/bubbq/Documents/CS-Projects/2D-Tile-Editor/Assets/items_animation/flag_r.png,1,0,10

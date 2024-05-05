@@ -22,17 +22,6 @@ int mpx, mpy = 0;
 // mouse position relative to the 2d camera object
 Vector2 mp = {0};
 
-// typedef struct
-// {
-// 	TileList walls;
-// 	TileList floors;
-// 	TileList doors;
-// 	TileList health_buffs;
-// 	TileList damage_buffs;
-// 	TileList interactables;
-// 	Vector2 spawn;
-// } World;
-
 void resizeLayer(TileList *layer)
 {
 	layer->cap *= 2;
@@ -249,7 +238,7 @@ void editLayer(TileList *layer, Tile *current_tile, Rectangle *world_area,enum E
 			}
 
 			// toggling animation
-			if(mouse_col && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_A) && frames > 0)
+			if(mouse_col && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_A))
 			{
 				layer->list[i].anim = !layer->list[i].anim; layer->list[i].fc = 0; layer->list[i].frames = frames;
 			}
@@ -265,6 +254,18 @@ void editLayer(TileList *layer, Tile *current_tile, Rectangle *world_area,enum E
 
 void editWorld(World *world, Rectangle world_area, Tile *current_tile, enum Element current_tile_type, int frames)
 {
+	// deleting world
+	if(IsKeyPressed(KEY_P))
+	{
+		eraseLayer(&world->walls);
+		eraseLayer(&world->floors);
+		eraseLayer(&world->doors);
+		eraseLayer(&world->health_buffs);
+		eraseLayer(&world->damage_buffs);
+		eraseLayer(&world->interactables);
+		*current_tile = (Tile){ 0 };
+	}
+
 	// edit corresp layer based on layer selection
 	switch (current_tile_type)
 	{
@@ -305,15 +306,15 @@ void drawLayer(TileList *layer, Color color, Rectangle world_area,const char *ds
 		// only draw tile if in bounds
 		if (layer->list[i].tx.id != 0 && (layer->list[i].sp.x < world_area.x + world_area.width) && (layer->list[i].sp.y < world_area.y + world_area.height))
 		{
-			DrawTexturePro(layer->list[i].tx,(Rectangle){layer->list[i].src.x, layer->list[i].src.y,TILE_SIZE, TILE_SIZE},(Rectangle){layer->list[i].sp.x, layer->list[i].sp.y,SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},(Vector2){0, 0}, 0, WHITE);
+			DrawTexturePro(layer->list[i].tx,(Rectangle){layer->list[i].src.x, layer->list[i].src.y,TILE_SIZE,
+								 TILE_SIZE},(Rectangle){layer->list[i].sp.x, layer->list[i].sp.y,SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},(Vector2){0, 0}, 0, WHITE);
 			
 			// character describing what type of tile it is
 			DrawText(dsc,layer->list[i].sp.x + SCREEN_TILE_SIZE - MeasureText(dsc, 5),layer->list[i].sp.y + TILE_SIZE, 5, color);
 
 			if(layer->list[i].anim)
 			{
-				char animDsc[100]; sprintf(animDsc, "A(%d)", layer->list[i].frames);
-				DrawText(animDsc, layer->list[i].sp.x + (TILE_SIZE / 2.0f), layer->list[i].sp.y + TILE_SIZE, 5, BLACK);
+				DrawText("A", layer->list[i].sp.x + (TILE_SIZE / 2.0f), layer->list[i].sp.y + TILE_SIZE, 5, BLACK);
 			}
 		}
 	}
@@ -517,6 +518,7 @@ int main()
 		// file dialog window that mirrors the files explorer in windos, mac, linux,etc.
 		if (fileDialogState.SelectFilePressed)
 		{
+			current_tile = (Tile){};
 			if (IsFileExtension(fileDialogState.fileNameText, ".png"))
 			{
 				strcpy(user_file_path,TextFormat("%s" PATH_SEPERATOR "%s", fileDialogState.dirPathText,fileDialogState.fileNameText));
@@ -570,18 +572,6 @@ int main()
 			current_tile = (Tile){0};
 		}
 
-		// deleting world
-		// if(IsKeyPressed(KEY_A))
-		// {
-		// 	eraseLayer(&world.walls);
-		// 	eraseLayer(&world.floors);
-		// 	eraseLayer(&world.doors);
-		// 	eraseLayer(&world.health_buffs);
-		// 	eraseLayer(&world.damage_buffs);
-		// 	eraseLayer(&world.interactables);
-		// 	current_tile = (Tile){ 0 };
-		// }
-
 		if(edit)
 		{
 			DrawText("EDITING", 900 - (MeasureText("EDITING", 30) / 2), 950, 30, RED);
@@ -627,6 +617,7 @@ int main()
 		// resetting world to original position
 		if (GuiButton((Rectangle){SCREEN_TILE_SIZE * 9.5, 8, SCREEN_TILE_SIZE * 2, TILE_SIZE},GuiIconText(ICON_FILE_SAVE, "FOCUS")))
 		{
+			// make offset nothing
 			camera.offset = mp;
 		}
 
