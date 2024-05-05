@@ -417,10 +417,7 @@ void move(TileList* world_walls, Entity* player)
             player->speed = sqrt(8 * (pow(player->speed, 2))) / 4;
 			player->adjsp = true;
         }
-    }
-	
-	else
-    {
+    } else {
         player->speed = 3;
 		player->adjsp = false;
     }
@@ -629,6 +626,16 @@ int main()
 		player.camera.target = player.pos;
 		world.area = (Rectangle){player.camera.target.x - player.camera.offset.x, player.camera.target.y - player.camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
 	   
+		// making enemies to fight
+		mobCreation(mp, &world);
+		
+		// mechanics for player to heal
+		heal(&world.health_buffs, &player);
+
+		// fight mechanics
+		fight(&player, &world.entities);
+
+
 	    BeginDrawing();
 
 			if(player.alive)
@@ -644,52 +651,6 @@ int main()
 					updatePlayer(&world.walls, &player);
 					updateEntities(&world.entities, &player, &world);
 				EndMode2D();
-				
-				// mechanics for player to heal
-				heal(&world.health_buffs, &player);
-
-				// fight mechanics
-				fight(&player, &world.entities);
-
-				// making enemies to fight
-				// mobCreation(mp, &world);
-
-				if(CheckCollisionPointRec(mp, world.area) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
-				{
-					// cant spawn mob in wall
-					bool valid_spawn = true;
-					for(int i = 0; i < world.walls.size; i++)
-					{
-						if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-											(Rectangle){world.walls.list[i].sp.x, world.walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-						{
-							valid_spawn = false;
-						}
-					}
-
-					// cant spawn mobs on top of each other
-					for(int i = 0; i < world.entities.size; i++)
-					{
-						if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-											(Rectangle){world.entities.entities[i].pos.x, world.entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-						{
-							valid_spawn = false;
-						}
-					}
-
-					if(valid_spawn)
-					{
-						Entity new_en;
-						new_en.name = "mob";
-						new_en.health = 100;
-						new_en.speed = 1;
-						new_en.pos = mp;
-						new_en.alive = true;
-						new_en.tx = addTexture(&world.textures, PLAYER_PATH);
-						new_en.id = GetRandomValue(0, 1000000000);
-						addEntity(&world.entities, new_en);
-					}
-				}
 			}
 
 			else
