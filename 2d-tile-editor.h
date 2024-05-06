@@ -56,6 +56,7 @@ typedef struct
 	float dx;
 	float dy;
 	Camera2D camera;
+	int anim_speed;
 } Entity;
 
 typedef struct
@@ -77,7 +78,6 @@ typedef struct
 	int size;
 } Textures;
 
-
 typedef struct
 {
 	Entity* entities;
@@ -96,7 +96,6 @@ typedef struct
 	TileList interactables;
 	Textures textures;
 	Vector2 spawn;
-	int spawn_rate;
 	Rectangle area;
 } World;
 

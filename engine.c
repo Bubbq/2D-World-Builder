@@ -3,15 +3,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "tile_generation.h"
+#include "2d-tile-editor.h"
+
+#define RAYGUI_IMPLEMENTATION
+#include "raygui.h"
+
+#undef RAYGUI_IMPLEMENTATION
 
 const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "test2.txt";
+const char* WORLD_PATH = "test.txt";
 const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
+const char* DEATH_PROMPT = "YOU DIED, RESPAWN?"; 
 
 const int ANIMATION_SPEED = 20;
 const int FPS = 60;
@@ -27,25 +33,24 @@ bool TimerDone(Timer timer)
 	return GetTime() - timer.startTime >= timer.lifeTime;
 }
 
+void clearEntities(Entities* world_entities)
+{
+	free(world_entities->entities);
+	world_entities->entities = malloc(ENTITY_CAP);
+	world_entities->cap = ENTITY_CAP;
+	world_entities->size = 0;
+}
+
 void resizeEntities(Entities* world_entities)
 {
 	world_entities->cap *= 2;
 	world_entities->entities = realloc(world_entities->entities, world_entities->cap);
+	
 	if(world_entities->entities == NULL)
 	{
 		printf("ERROR RESZING ENTITIES \n");
 		exit(1);
 	}
-}
-
-void addEntity(Entities* world_entities, Entity entity)
-{
-	if(world_entities->size * sizeof(Entity) == world_entities->cap)
-	{
-		resizeEntities(world_entities);
-	}
-
-	world_entities->entities[world_entities->size++] = entity;
 }
 
 void resizeLayer(TileList* layer)
@@ -60,6 +65,16 @@ void resizeLayer(TileList* layer)
     }
 }
 
+void addEntity(Entities* world_entities, Entity entity)
+{
+	if(world_entities->size * sizeof(Entity) == world_entities->cap)
+	{
+		resizeEntities(world_entities);
+	}
+
+	world_entities->entities[world_entities->size++] = entity;
+}
+
 void addTile(TileList* layer, Tile tile)
 {
     if(layer->size * sizeof(Tile) == layer->cap)
@@ -70,10 +85,12 @@ void addTile(TileList* layer, Tile tile)
     layer->list[layer->size++] = tile;
 }
 
+// either adds a new texture to list of textures or returns the existing texture of the one we want
 Texture2D addTexture(Textures* textures, const char* filePath)
 {
 	int ctxi = -1;
 	bool unique = true;
+
 	for(int i = 0; i < textures->size; i++)
 	{
 		// if we alr have that texture, load it from the ith position
@@ -166,24 +183,27 @@ void drawLayer(TileList* layer)
 {
     for(int i = 0; i < layer->size; i++)
     {
-        if(layer->list[i].tx.id > 0 && layer->list[i].active)
+		Tile* tile = &layer->list[i];
+
+        if(tile->tx.id > 0 && tile->active)
         {
 			int frame_pos = 0;
 
 			// animate tiles
-			if(layer->list[i].anim)
+			if(tile->anim)
 			{
-				layer->list[i].fc++;
-				frame_pos = layer->list[i].fc / layer->list[i].anim_speed;
-				if(frame_pos > layer->list[i].frames)
+				tile->fc++;
+				frame_pos = tile->fc / tile->anim_speed;
+
+				if(frame_pos > tile->frames)
 				{
 					frame_pos = 0;
-					layer->list[i].fc = 0;
+					tile->fc = 0;
 				}
 			}
 
-            DrawTexturePro(layer->list[i].tx, (Rectangle){layer->list[i].src.x + (frame_pos * TILE_SIZE), layer->list[i].src.y, TILE_SIZE, TILE_SIZE},
-													 (Rectangle){layer->list[i].sp.x, layer->list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
+            DrawTexturePro(tile->tx, (Rectangle){tile->src.x + (frame_pos * TILE_SIZE), tile->src.y, TILE_SIZE, TILE_SIZE},
+													 (Rectangle){tile->sp.x, tile->sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
         }
     }
 }
@@ -203,8 +223,6 @@ void init(World* world, Entity* player)
 	world->entities.size = 0;
 	world->textures.size = 0;
 
-	world->spawn_rate = 60;
-	
 	world->entities.entities = malloc(ENTITY_CAP);
 	world->walls.list = malloc(TILE_CAP);
 	world->floors.list = malloc(TILE_CAP);
@@ -225,11 +243,11 @@ void init(World* world, Entity* player)
 	
 	// getting spawn point
 	FILE* inFile = fopen(SPAWN_PATH, "r");
+
 	if(inFile == NULL)
 	{
 		printf("NO SPAWN POINT SAVED \n");
 		world->spawn = (Vector2){0, 0};
-		return;
 	}
 
 	else
@@ -240,12 +258,15 @@ void init(World* world, Entity* player)
 			world->spawn.x = atoi(strtok(line, " "));
 			world->spawn.y = atoi(strtok(NULL, "\n"));
 		}
+
+		fclose(inFile);
 	}
 
 	player->name = "player";
 	player->frame_count = 0;
 	player->health = 100;
 	player->speed = 5;
+	player->anim_speed = ANIMATION_SPEED;
 	player->pos = (Vector2){world->spawn.x, world->spawn.y};
 	player->alive = true;
 	player->adjsp = false;
@@ -254,9 +275,7 @@ void init(World* world, Entity* player)
 	
 	player->camera.target = player->pos;
 	player->camera.offset = (Vector2){GetScreenWidth() / 2.0f, GetScreenHeight() / 2.0f};
-	player->camera.zoom = 1.75f;
-
-	fclose(inFile);
+	player->camera.zoom = 1.0f;
 }
 
 void deinit(World *world)
@@ -321,7 +340,7 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 		}
 
 		en->frame_count++;
-		en->xfp = (en->frame_count / ANIMATION_SPEED);
+		en->xfp = (en->frame_count / en->anim_speed);
 		if(en->xfp > 3)
 		{
 			en->frame_count = 0;
@@ -331,6 +350,10 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 		// find entities angle 
 		float dx = player->pos.x - en->pos.x;
 		float dy = player->pos.y - en->pos.y;
+
+		// getting angular speed
+		en->dx = cosf(en->angle * DEG2RAD) * en->speed;
+		en->dy = sinf(en->angle * DEG2RAD) * en->speed;
 
 		// make it nearest number divisible by 32
 		en->angle = atan2f(dy, dx) * RAD2DEG;
@@ -367,9 +390,7 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 			en->yfp = 2;
 		}
 
-		en->dx = cosf(en->angle * DEG2RAD) * en->speed;
-		en->dy = sinf(en->angle * DEG2RAD) * en->speed;
-
+		// collisions between walls and other enitites
 		en->pos.x += en->dx;
 		wall_col = entityCollisionWorld(en, &world->walls);
 		en_col = entityCollisionEntity(en, &world->entities);
@@ -388,12 +409,12 @@ void updateEntities(Entities* world_entities, Entity* player, World* world)
 			en->pos.y -= en->dy;
 		}
 
-		// drawing rectangle showing their health
+		// displaying health bar
 		DrawRectangle(en->pos.x + 5, en->pos.y - 7, 20 * (en->health / 100), 7, RED);
 		DrawRectangleLines(en->pos.x + 5, en->pos.y - 7, 20, 7, BLACK);
 
 		// only draw entity when in bounds
-		if(CheckCollisionPointRec((Vector2){en->pos.x, en->pos.y}, world->area))
+		if(CheckCollisionPointRec((Vector2){en->pos.x + SCREEN_TILE_SIZE, en->pos.y + SCREEN_TILE_SIZE}, world->area))
 		{
 			DrawTexturePro(en->tx, (Rectangle){en->xfp * TILE_SIZE, en->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
 										(Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
@@ -444,7 +465,7 @@ void move(TileList* world_walls, Entity* player)
 		player->move = true;
 
 		wall_col = entityCollisionWorld(player, world_walls);
-		if(wall_col >+ 0)
+		if(wall_col >= 0)
 		{
 			player->pos.x += player->speed;
 		}
@@ -476,7 +497,7 @@ void move(TileList* world_walls, Entity* player)
 		}
 	}
 
-	// setting afk position
+	// afk
 	if(!player->move)
 	{
 		player->xfp = player->yfp = 0;
@@ -588,6 +609,7 @@ void mobCreation(Vector2 mp, World* world)
 			new_en.speed = 1;
 			new_en.pos = mp;
 			new_en.alive = true;
+			new_en.anim_speed = ANIMATION_SPEED;
 			new_en.tx = addTexture(&world->textures, PLAYER_PATH);
 			new_en.id = GetRandomValue(0, 1000000000);
 			addEntity(&world->entities, new_en);
@@ -599,7 +621,7 @@ void updatePlayer(TileList* world_walls, Entity* player)
 {
 	// animation
 	player->frame_count++;
-	player->xfp = (player->frame_count / ANIMATION_SPEED);
+	player->xfp = (player->frame_count / player->anim_speed);
 	if(player->xfp > 3)
 	{
 		player->xfp = 0;
@@ -615,9 +637,9 @@ void updatePlayer(TileList* world_walls, Entity* player)
 
 int main()
 {
+	Vector2 mp;
     World world;
 	Entity player;
-	Vector2 mp;
 	init(&world, &player);
 
 	while(!WindowShouldClose())
@@ -626,13 +648,8 @@ int main()
 		player.camera.target = player.pos;
 		world.area = (Rectangle){player.camera.target.x - player.camera.offset.x, player.camera.target.y - player.camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
 	   
-		// making enemies to fight
 		mobCreation(mp, &world);
-		
-		// mechanics for player to heal
 		heal(&world.health_buffs, &player);
-
-		// fight mechanics
 		fight(&player, &world.entities);
 
 	    BeginDrawing();
@@ -652,16 +669,28 @@ int main()
 				EndMode2D();
 			}
 
+			// death screen
 			else
 			{
 				ClearBackground(GRAY);
-				const char* prompt = "YOU DIED, RESPAWN? (press enter)"; 
-				DrawText(prompt, (GetScreenWidth() / 2.0f) - (MeasureText(prompt, 30) / 2.0f), GetScreenHeight() / 2.0f, 30, RED);
-				if(IsKeyPressed(KEY_ENTER))
+
+				DrawText(DEATH_PROMPT, (GetScreenWidth() / 2.0f) - (MeasureText(DEATH_PROMPT, 30) / 2.0f),
+							 GetScreenHeight() / 2.0f, 30, RED);
+
+				if(GuiButton((Rectangle){(GetScreenWidth() / 2.0f) - 125, 
+								(GetScreenHeight() / 2.0f) + 50, 100, 50}, "RESPAWN"))
 				{
+					clearEntities(&world.entities);
+					player.pos = world.spawn;
 					player.alive = true;
 					player.health = 100;
 					player.level = 0;
+				}
+
+				if(GuiButton((Rectangle){(GetScreenWidth() / 2.0f) + 50,
+							(GetScreenHeight() / 2.0f) + 50, 100, 50}, "QUIT"))
+				{
+					break;
 				}
 			}
 
