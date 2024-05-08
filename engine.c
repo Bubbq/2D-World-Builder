@@ -647,10 +647,6 @@ int main()
 		mp = GetScreenToWorld2D(GetMousePosition(), player.camera);
 		player.camera.target = player.pos;
 		world.area = (Rectangle){player.camera.target.x - player.camera.offset.x, player.camera.target.y - player.camera.offset.y,SCREEN_WIDTH,SCREEN_HEIGHT};
-	   
-		mobCreation(mp, &world);
-		heal(&world.health_buffs, &player);
-		fight(&player, &world.entities);
 
 	    BeginDrawing();
 
@@ -664,9 +660,13 @@ int main()
 					drawLayer(&world.doors);
 					drawLayer(&world.interactables);
 					drawLayer(&world.walls);
-					updatePlayer(&world.walls, &player);
 					updateEntities(&world.entities, &player, &world);
+					updatePlayer(&world.walls, &player);
 				EndMode2D();
+				
+				mobCreation(mp, &world);
+				heal(&world.health_buffs, &player);
+				fight(&player, &world.entities);
 			}
 
 			// death screen
