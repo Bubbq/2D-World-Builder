@@ -12,6 +12,13 @@ enum Element
 	SPAWN = 6,
 };
 
+typedef enum 
+{
+	QUIT = -1,
+	ALIVE = 0, 
+	DEAD = 1, 
+} Status;
+
 typedef struct
 {
 	Vector2 src;
@@ -44,6 +51,7 @@ typedef struct
 	bool adjsp;
 	bool move;
 	Texture2D tx;
+	int anim_speed;
 	Timer timer;
 	Timer moveTimer;
 	Vector2 path;
@@ -56,7 +64,6 @@ typedef struct
 	float dx;
 	float dy;
 	Camera2D camera;
-	int anim_speed;
 } Entity;
 
 typedef struct
@@ -80,14 +87,14 @@ typedef struct
 
 typedef struct
 {
-	Entity* entities;
 	int size;
 	size_t cap;
-} Entities;
+	Entity* entities;
+} EntityList;
 
 typedef struct
 {
-	Entities entities;
+	EntityList entities;
 	TileList walls;
 	TileList floors;
 	TileList doors;
@@ -99,9 +106,9 @@ typedef struct
 	Rectangle area;
 } World;
 
-const size_t TILE_CAP = (25 * sizeof(Tile));
-const size_t ENTITY_CAP = (3 * sizeof(Entity));
-const int TEXTURE_CAP = 25;
+const size_t TILE_CAP = sizeof(Tile);
+const size_t ENTITY_CAP = sizeof(Entity);
+
 const int TILE_SIZE = 16;
 const float SCALE = 2.0f;
 const int SCREEN_TILE_SIZE = TILE_SIZE * SCALE;

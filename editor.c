@@ -448,7 +448,7 @@ void saveWorldWindow(World* world, bool* showInputTextBox, Tile* current_tile, c
 					printf("ERROR SAVING SPAWN \n");
 				}
 
-				fprintf(outFile, "%d %d\n", (int)world->spawn.x, (int)world->spawn.y);
+				fprintf(outFile, "%d,%d\n", (int)world->spawn.x, (int)world->spawn.y);
 				fclose(outFile);
 			}
 		}
