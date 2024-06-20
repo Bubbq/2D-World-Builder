@@ -12,6 +12,12 @@ enum Element
 	SPAWN = 6,
 };
 
+typedef enum
+{
+	PLAYER = 0,
+	ENEMY = 1,
+} EntityType;
+
 typedef enum 
 {
 	QUIT = -1,
@@ -52,6 +58,7 @@ typedef struct
 	bool move;
 	Texture2D tx;
 	int anim_speed;
+	int id;
 	Timer timer;
 	Timer moveTimer;
 	Vector2 path;
@@ -59,11 +66,9 @@ typedef struct
 	int yfp;
 	float exp;
 	int level;
-	int id;
 	float angle;
 	float dx;
 	float dy;
-	Camera2D camera;
 } Entity;
 
 typedef struct

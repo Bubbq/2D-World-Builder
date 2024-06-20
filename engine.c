@@ -1,10 +1,11 @@
 #include <raylib.h>
 #include <raymath.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "2d-tile-editor.h"
 
-# define CHAR_LIMIT 100
+#define CHAR_LIMIT 100
 
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
@@ -22,8 +23,11 @@ const char* DEATH_PROMPT = "YOU DIED, RESPAWN?";
 const int ANIMATION_SPEED = 20;
 const int FPS = 60;
 
-Status status = ALIVE;
+Vector2 mp;
+World world;
+Entity player;
 Camera2D camera;
+Status status = ALIVE;
 
 void StartTimer(Timer *timer, double lifetime) // good
 {
@@ -209,7 +213,8 @@ Vector2 getSpawnPoint() // good
 	return spawn;
 }	
 
-Entity createPlayer() { return (Entity){"player", 0, 100.0f, 5.0f, getSpawnPoint(), true, false, false, LoadTexture(PLAYER_PATH), ANIMATION_SPEED}; } // good
+Entity createPlayer() { return (Entity){"player", 0, 100.0f, 3.0f, getSpawnPoint(), true, false, false, LoadTexture(PLAYER_PATH), ANIMATION_SPEED}; } // good
+Entity createEnemy(){ return (Entity){"mob", 0, 100, 1.0f, mp, true, false, true, addTexture(&world.textures, PLAYER_PATH), ANIMATION_SPEED, GetRandomValue(0, 1000000000)}; }
 
 void init(World* world, Entity* player) // good
 {
@@ -266,9 +271,9 @@ float getAngle(Vector2 v1, Vector2 v2) // good
 	return angle;
 }
 
-int entityCollisionWorld(Rectangle en_area, TileList* layer) // good
+int entityCollisionWorld(Vector2 pos, TileList* layer) // good
 {
-	// returns the index of the tile of a layer you collided with
+	Rectangle en_area = {pos.x, pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE};
 	for(int i = 0; i < layer->size; i++) if(CheckCollisionRecs(en_area, (Rectangle){layer->list[i].sp.x, layer->list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}) && layer->list[i].active) return i;
 	return -1;
 }
@@ -291,33 +296,35 @@ void animateEntity(Entity* en) // good
 	en->frame_count++;
 	en->xfp = (en->frame_count / en->anim_speed);
 	if(en->xfp > 3) en->frame_count = en->xfp = 0;
-
-	// setting sprite direction based on angle
-	if((en->angle > 45) && (en->angle < 135)) en->yfp = 0;
-	else if((en->angle > 225) && (en->angle < 315)) en->yfp = 1;
-	else if((en->angle > 135) && (en->angle < 215)) en->yfp = 3;
-	else en->yfp = 2;
 }
 
-void moveEntity(TileList* walls, EntityList* entities, Entity* en, Vector2 mv) // good
+void moveEntity(TileList* walls, EntityList* entities, Entity* en, Vector2 mv, EntityType et) // good
 {
-	int wall_col, en_col = -1;
-	
+	int wall_col = -1;
+	int en_col = -1;
+
+	en->move = true;
+
 	// move en by movement vector
 	en->pos = Vector2Add(en->pos, mv);
 
 	// finding the index of the collided wall or entitys (if any)
-	wall_col = entityCollisionWorld((Rectangle){en->pos.x, en->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, walls);
+	wall_col = entityCollisionWorld(en->pos, walls);
 	en_col = entityCollisionEntity(en->id, (Vector2){en->pos.x + TILE_SIZE, en->pos.y + TILE_SIZE}, entities);
 	
 	// collision handling
-	if((wall_col >= 0) || (en_col >= 0)) en->pos = Vector2Subtract(en->pos, mv);
+	if(et == ENEMY)
+	{
+		if((wall_col >= 0) || (en_col >= 0)) en->pos = Vector2Subtract(en->pos, mv);
+	}
+
+	if(et == PLAYER) if((wall_col >= 0)) en->pos = Vector2Subtract(en->pos, mv);
 }
 
 void displayStatistic(Vector2 pos, int width, int height, float f) 
 {
-	DrawRectangle(pos.x, pos.y, width * (f / 100), 7, RED);
-	DrawRectangleLines(pos.x, pos.y, width, 7, BLACK);
+	DrawRectangle(pos.x, pos.y, width * (f / 100), height, RED);
+	DrawRectangleLines(pos.x, pos.y, width, height, BLACK);
 }
 
 void updateEntities(EntityList* world_entities, Entity* player, World* world) // good
@@ -337,9 +344,15 @@ void updateEntities(EntityList* world_entities, Entity* player, World* world) //
 		// animation
 		animateEntity(en);
 
+		// setting sprite direction based on angle
+		if((en->angle > 45) && (en->angle < 135)) en->yfp = 0;
+		else if((en->angle > 225) && (en->angle < 315)) en->yfp = 1;
+		else if((en->angle > 135) && (en->angle < 215)) en->yfp = 3;
+		else en->yfp = 2;
+
 		// moving entity by components
-		moveEntity(&world->walls, world_entities, en, dx);
-		moveEntity(&world->walls, world_entities, en, dy);
+		moveEntity(&world->walls, world_entities, en, dx, ENEMY);
+		moveEntity(&world->walls, world_entities, en, dy, ENEMY);
 
 		// displaying health bar
 		displayStatistic((Vector2){en->pos.x + 5, en->pos.y - 7}, 20, 7, en->health);
@@ -353,13 +366,22 @@ void updateEntities(EntityList* world_entities, Entity* player, World* world) //
 	}
 }
 
-void move(TileList* world_walls, Entity* player)
+void moveBtn(Entity* player, TileList* walls, EntityList* entities, KeyboardKey key, Vector2 mv, int fp)
+{
+	if(IsKeyDown(key))
+	{
+		moveEntity(walls, entities, player, mv, PLAYER);
+		player->yfp = fp;
+	}
+}
+
+void movement(TileList* world_walls, Entity* player, EntityList* entities)
 {
 	// flag for diagonal movement
     bool diagonal = (IsKeyDown(KEY_W) && IsKeyDown(KEY_D)) || 
-                      (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) || 
-                      	(IsKeyDown(KEY_A) && IsKeyDown(KEY_S)) || 
-                      		(IsKeyDown(KEY_S) && IsKeyDown(KEY_D));
+                    (IsKeyDown(KEY_W) && IsKeyDown(KEY_A)) || 
+					(IsKeyDown(KEY_A) && IsKeyDown(KEY_S)) || 
+					(IsKeyDown(KEY_S) && IsKeyDown(KEY_D));
 
     if (diagonal)
     {
@@ -369,70 +391,22 @@ void move(TileList* world_walls, Entity* player)
             player->speed = (sqrt(8 * (pow(player->speed, 2))) / 4);
 			player->adjsp = true;
         }
-    } else {
+    }
+
+	else
+	{
         player->speed = 3;
 		player->adjsp = false;
     }
 	
-	int wall_col = -1;
-
-	if(IsKeyDown(KEY_W))
-	{
-		player->pos.y -= player->speed;
-		player->yfp = 1;
-		player->move = true;
-
-		wall_col = entityCollisionWorld((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, world_walls);
-		if(wall_col >= 0)
-		{
-			player->pos.y += player->speed;
-		}
-	}
-
-	if(IsKeyDown(KEY_A))
-	{
-		player->pos.x -= player->speed;
-		player->yfp = 3;
-		player->move = true;
-
-		wall_col = entityCollisionWorld((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, world_walls);
-		if(wall_col >= 0)
-		{
-			player->pos.x += player->speed;
-		}
-	}
-
-	if(IsKeyDown(KEY_S))
-	{
-		player->pos.y += player->speed;
-		player->yfp = 0;
-		player->move = true;
-
-		wall_col = entityCollisionWorld((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, world_walls);
-		if(wall_col >= 0)
-		{
-			player->pos.y -= player->speed;
-		}
-	}
-
-	if(IsKeyDown(KEY_D))
-	{
-		player->pos.x += player->speed;
-		player->yfp = 2;
-		player->move = true;
-
-		wall_col = entityCollisionWorld((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, world_walls);
-		if(wall_col >= 0)
-		{
-			player->pos.x -= player->speed;
-		}
-	}
-
+	// movement controls
+	moveBtn(player, world_walls, entities, KEY_W, (Vector2){0, -player->speed}, 1);
+	moveBtn(player, world_walls, entities, KEY_A, (Vector2){-player->speed, 0}, 3);
+	moveBtn(player, world_walls, entities, KEY_S, (Vector2){0, player->speed}, 0);
+	moveBtn(player, world_walls, entities, KEY_D, (Vector2){player->speed, 0}, 2);
+	
 	// afk
-	if(!player->move)
-	{
-		player->xfp = player->yfp = 0;
-	}
+	if(!player->move) player->xfp = player->yfp = 0;
 
 	// resetting movement flag
 	player->move = false;
@@ -440,21 +414,22 @@ void move(TileList* world_walls, Entity* player)
 
 void heal(TileList* world_heals, Entity* player)
 {
-	int h_col =  entityCollisionWorld((Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, world_heals);
-	if(h_col >= 0)
+	int col =  entityCollisionWorld(player->pos, world_heals);
+
+	if(col >= 0)
 	{
 		DrawText("PRESSING H WILL HEAL", GetScreenWidth() - 310, GetScreenHeight() - 110, 20, GREEN);
-		if(IsKeyPressed(KEY_H) && player->health < 100)
+		if((IsKeyPressed(KEY_H)) && (player->health < 100))
 		{
-			player->health = player->health + 20 > 100 ? 100 : player->health + 20;
-			world_heals->list[h_col].active = false;
+			player->health += 20;
+			if(player->health > 100) player->health = 100;
+			world_heals->list[col].active = false;
 		}
 	}
 
-	// drawing the player's health bar
-	DrawRectangle(GetScreenWidth() - 310, GetScreenHeight() - 60, (300) * (player->health / 100),50, RED);
-	DrawRectangleLines(GetScreenWidth() - 310, GetScreenHeight() - 60, 300,50, BLACK);
+	// health bar
 	DrawText("HEALTH", GetScreenWidth() - 300, GetScreenHeight() - 80, 20, RED);
+	displayStatistic((Vector2){GetScreenWidth() - 310, GetScreenHeight() - 60}, 300, 50, player->health);
 }
 
 void fight(Entity* player, EntityList* enemies)
@@ -512,68 +487,32 @@ void mobCreation(Vector2 mp, World* world)
 {
 	if(CheckCollisionPointRec(mp, world->area) && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
 	{
-		// cant spawn mob in wall
 		bool valid_spawn = true;
-		for(int i = 0; i < world->walls.size; i++)
-		{
-			if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-								(Rectangle){world->walls.list[i].sp.x, world->walls.list[i].sp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-			{
-				valid_spawn = false;
-			}
-		}
-
+		// cant spawn mob in wall
+		if(entityCollisionWorld(mp, &world->walls) >= 0) valid_spawn = false;
 		// cant spawn mobs on top of each other
-		for(int i = 0; i < world->entities.size; i++)
-		{
-			if(CheckCollisionRecs((Rectangle){mp.x, mp.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE},
-								(Rectangle){world->entities.entities[i].pos.x, world->entities.entities[i].pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}))
-			{
-				valid_spawn = false;
-			}
-		}
-
-		if(valid_spawn)
-		{
-			Entity new_en;
-			new_en.name = "mob";
-			new_en.health = 100;
-			new_en.speed = 1;
-			new_en.pos = mp;
-			new_en.alive = true;
-			new_en.anim_speed = ANIMATION_SPEED;
-			new_en.tx = addTexture(&world->textures, PLAYER_PATH);
-			new_en.id = GetRandomValue(0, 1000000000);
-			addEntity(&world->entities, new_en);
-		}
+		if(entityCollisionEntity(0, (Vector2){mp.x + TILE_SIZE, mp.y + TILE_SIZE}, &world->entities) >= 0) valid_spawn = false;
+		// add enemy if spawn is valid
+		if(valid_spawn) addEntity(&world->entities, createEnemy());
 	}
 }
 
-void updatePlayer(TileList* world_walls, Entity* player)
+void updatePlayer(TileList* world_walls, Entity* player, EntityList* entities)
 {
 	// animation
-	player->frame_count++;
-	player->xfp = (player->frame_count / player->anim_speed);
-	if(player->xfp > 3)
-	{
-		player->xfp = 0;
-		player->frame_count = 0;
-	}
+	animateEntity(player);
 	
-	move(world_walls, player);
+	// movement
+	movement(world_walls, player, entities);
 
 	// drawing player
 	DrawTexturePro(player->tx, (Rectangle){player->xfp * TILE_SIZE, player->yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
 										(Rectangle){player->pos.x, player->pos.y, SCREEN_TILE_SIZE, SCREEN_TILE_SIZE}, (Vector2){0,0}, 0, WHITE);
-}
+} 
 
 int main()
 {
-	Vector2 mp;
-    World world;
-	Entity player;
 	init(&world, &player);
-
 	while((status != QUIT) && (!WindowShouldClose()))
     {
 		camera.target = player.pos;
@@ -594,11 +533,11 @@ int main()
 						drawLayer(&world.walls);
 						// updating entities
 						updateEntities(&world.entities, &player, &world);
-						updatePlayer(&world.walls, &player);
+						updatePlayer(&world.walls, &player, &world.entities);
 					EndMode2D();
 					mobCreation(mp, &world);
-					heal(&world.health_buffs, &player);
 					fight(&player, &world.entities);
+					heal(&world.health_buffs, &player);
 					break;
 				case DEAD:
 					ClearBackground(GRAY);
@@ -623,4 +562,4 @@ int main()
 }
 
 // TODO - refactor BetterTexture struct and functions
- // make some animation struct for entities and tiles so I can have one function to animate them all together
+// make world, player, and mouse position variable global
