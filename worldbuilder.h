@@ -59,8 +59,8 @@ typedef struct
 	Texture2D tx;
 	int anim_speed;
 	int id;
-	Timer timer;
-	Timer moveTimer;
+	Timer attack_speed;
+	Timer heal_speed;
 	Vector2 path;
 	int xfp;
 	int yfp;
