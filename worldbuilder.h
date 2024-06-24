@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <raylib.h>
 
-enum Element
+typedef enum 
 {
 	WALL = 0,
 	FLOOR = 1,
@@ -10,13 +10,7 @@ enum Element
 	DAMAGE_BUFF = 4,
 	INTERACTABLE = 5,
 	SPAWN = 6,
-};
-
-typedef enum
-{
-	PLAYER = 0,
-	ENEMY = 1,
-} EntityType;
+} TileType;
 
 typedef enum 
 {
@@ -30,7 +24,7 @@ typedef struct
 	Vector2 src;
 	Vector2 sp;
 	Texture2D tx;
-	enum Element tt;
+	TileType tt;
 	char fp[512];
 	bool active;
 	bool anim;
@@ -52,23 +46,20 @@ typedef struct
 	float health;
 	float speed;
 	Vector2 pos;
-	bool alive;
 	// flag for diagonal speed adjustment
 	bool adjsp;
 	bool move;
 	Texture2D tx;
 	int anim_speed;
 	int id;
+	int damage;
 	Timer attack_speed;
 	Timer heal_speed;
-	Vector2 path;
 	int xfp;
 	int yfp;
 	float exp;
 	int level;
 	float angle;
-	float dx;
-	float dy;
 } Entity;
 
 typedef struct
