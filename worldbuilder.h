@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <raylib.h>
+#define CHAR_LIMIT 1024
 
 typedef enum 
 {
@@ -21,16 +22,22 @@ typedef enum
 
 typedef struct
 {
+	int frames;
+	int count;
+	int speed;
+	int xfp;
+	int yfp;
+} Animation;
+
+typedef struct
+{
 	Vector2 src;
 	Vector2 sp;
 	Texture2D tx;
 	TileType tt;
-	char fp[512];
-	bool active;
-	bool anim;
-	int fc;
-	int frames;
-	int anim_speed;
+	char fp[CHAR_LIMIT];
+	bool animated;
+	Animation animtaion;
 } Tile;
 
 typedef struct
@@ -42,21 +49,17 @@ typedef struct
 typedef struct
 {
 	char* name;
-	int frame_count;
 	float health;
 	float speed;
 	Vector2 pos;
-	// flag for diagonal speed adjustment
 	bool adjsp;
 	bool move;
 	Texture2D tx;
-	int anim_speed;
+	Animation animation;
 	int id;
 	int damage;
 	Timer attack_speed;
 	Timer heal_speed;
-	int xfp;
-	int yfp;
 	float exp;
 	int level;
 	float angle;
@@ -72,7 +75,7 @@ typedef struct
 typedef struct
 {
 	Texture2D tx;
-	char fp[512];
+	char fp[CHAR_LIMIT];
 } BetterTexture;
 
 typedef struct
