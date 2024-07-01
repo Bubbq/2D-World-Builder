@@ -2,15 +2,22 @@
 #include <raylib.h>
 #define CHAR_LIMIT 1024
 
+typedef enum
+{
+	EDIT = 0,
+	SPAWN = 1,
+	FREE = 2,
+} EditState;
+
 typedef enum 
 {
+	UNDF = -1,
 	WALL = 0,
 	FLOOR = 1,
 	DOOR = 2,
 	HEALTH_BUFF = 3,
 	DAMAGE_BUFF = 4,
 	INTERACTABLE = 5,
-	SPAWN = 6,
 } TileType;
 
 typedef enum 
@@ -93,16 +100,16 @@ typedef struct
 
 typedef struct
 {
-	EntityList entities;
 	TileList walls;
-	TileList floors;
 	TileList doors;
+	TileList floors;
 	TileList health_buffs;
 	TileList damage_buffs;
 	TileList interactables;
+	EntityList entities;
 	Textures textures;
-	Vector2 spawn;
 	Rectangle area;
+	Vector2 spawn;
 } World;
 
 const size_t TILE_CAP = sizeof(Tile);

@@ -14,7 +14,7 @@ const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "test.txt";
+const char* WORLD_PATH = "nemo.txt";
 const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
 const char* DEATH_PROMPT = "YOU DIED, RESPAWN?"; 
@@ -23,7 +23,7 @@ const char* HEAL_PROMPT = "PRESSING H WILL HEAL";
 const int FPS = 60;
 const int PLAYER_ID = 0;
 
-const Animation ENTITY_ANIMATION = {3, 0, 15, 0, 0}; 
+const Animation ENTITY_ANIMATION = {3, 0, 15, 0, 0};
 
 Vector2 mp;
 World world;
@@ -123,7 +123,6 @@ void loadLayers(const char* FP)
     char fp[CHAR_LIMIT];
 
 	bool animated;
-	int frame_count;
 	int frames;
 	int animation_speed;	
 
@@ -138,7 +137,6 @@ void loadLayers(const char* FP)
 		strcpy(fp, strtok(NULL, ","));
 
 		animated = atoi(strtok(NULL, ","));
-		frame_count = atoi(strtok(NULL, ","));
 		frames = atoi(strtok(NULL, ","));
 		animation_speed = atoi(strtok(NULL, "\n"));
         Tile tile = (Tile){src, sp, addTexture(&world.textures, fp), tt, "", animated, (Animation){frames, 0, animation_speed, 0, 0}};
@@ -185,9 +183,9 @@ void drawLayer(TileList* tl)
     }
 }
 
-TileList createTileList() { return (TileList){0, TILE_CAP, malloc(TILE_CAP)}; }
+TileList initTileList() { return (TileList){0, TILE_CAP, malloc(TILE_CAP)}; }
 
-EntityList createEntityList(){ return (EntityList){0, ENTITY_CAP, malloc(ENTITY_CAP)}; } 
+EntityList initEntityList(){ return (EntityList){0, ENTITY_CAP, malloc(ENTITY_CAP)}; } 
 
 void resetEntityList(EntityList* el) 
 {
@@ -223,14 +221,14 @@ void init()
 	
 	world.textures.size = 0;
 
-	// world inititalization
-	world.walls = createTileList();
-	world.floors = createTileList();
-	world.doors = createTileList();
-	world.health_buffs = createTileList();
-	world.damage_buffs = createTileList();
-	world.interactables = createTileList();
-	world.entities = createEntityList();
+	// layer inititalization
+	world.walls = initTileList();
+	world.floors = initTileList();
+	world.doors = initTileList();
+	world.health_buffs = initTileList();
+	world.damage_buffs = initTileList();
+	world.interactables = initTileList();
+	world.entities = initEntityList();
     loadLayers(WORLD_PATH);
 
 	// player instantiation
@@ -307,11 +305,7 @@ void displayStatistic(Vector2 pos, int width, int height, float f, Color c)
 void awardXP(Entity* player)
 {
 	player->exp += 20;
-	if(player->exp >= 100)
-	{
-		player->exp = 0;
-		player->level++;
-	}
+	if(player->exp >= 100) { player->exp = 0; player->level++; }
 }
 
 void dealDamage(Entity* target, Entity* en)
@@ -342,7 +336,6 @@ void updateEntities(EntityList* world_entities)
 		en->angle = getAngle(en->pos, player.pos);
 
 		moveEntity(en);
-		// animateEntity(en);
 		animate(&en->animation);
 		dealDamage(&player, en);
 
@@ -470,21 +463,11 @@ void showLevels(int level, float exp)
 
 void updatePlayer(TileList* walls, TileList* heals, EntityList* enemies, Entity* player)
 {
-	// animateEntity(player);
 	animate(&player->animation);
 	movement(walls, player, enemies);
-	
-	// dealing damage to collided enemeies
-	for(int i = 0; i < enemies->size; i++) dealDamage(&enemies->entities[i], player);
-	
-	// healing
 	encounterHeals(player, &world.health_buffs);
-	
-	// player statistics
 	showHealth(player->health);
 	showLevels(player->level, player->exp);
-	
-	// drawing player
 	DrawTexturePro(player->tx, (Rectangle){player->animation.xfp * TILE_SIZE, player->animation.yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
 									getObjectArea(player->pos), (Vector2){0,0}, 0, WHITE);
 } 

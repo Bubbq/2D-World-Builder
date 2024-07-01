@@ -1,9 +1,9 @@
 # to move in created world
-all:
+play:
 	gcc engine.c -o run -lraylib -lm -Wall 
 
 #  using the editor
-editor:
+edit:
 	gcc editor.c -o run -lraylib -lm -Wall
 
 clean:
