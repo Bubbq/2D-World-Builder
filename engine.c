@@ -14,7 +14,7 @@ const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "nemo.txt";
+const char* WORLD_PATH = "test.txt";
 const char* SPAWN_PATH = "spawn.txt";
 const char* PLAYER_PATH = "Assets/player.png";
 const char* DEATH_PROMPT = "YOU DIED, RESPAWN?"; 
@@ -444,8 +444,8 @@ void createMobs(World* world)
 
 void showHealth(float health)
 {
-	Vector2 text_pos = GetScreenToWorld2D((Vector2){SCREEN_WIDTH - 300, SCREEN_HEIGHT - 80}, camera);
-	Vector2 heal_bar_pos = GetScreenToWorld2D((Vector2){SCREEN_WIDTH - 310, SCREEN_HEIGHT - 60}, camera);
+	Vector2 text_pos = (Vector2){SCREEN_WIDTH - 300, SCREEN_HEIGHT - 80};
+	Vector2 heal_bar_pos = (Vector2){SCREEN_WIDTH - 310, SCREEN_HEIGHT - 60};
 
 	DrawText("HEALTH", text_pos.x, text_pos.y, 20, RED);
 	displayStatistic(heal_bar_pos, 300, 50, health, RED);					
@@ -453,8 +453,8 @@ void showHealth(float health)
 
 void showLevels(int level, float exp)
 {
-	Vector2 text_pos = GetScreenToWorld2D((Vector2){10, SCREEN_HEIGHT - 80}, camera);
-	Vector2 level_bar_pos = GetScreenToWorld2D((Vector2){10, SCREEN_HEIGHT - 60}, camera);
+	Vector2 text_pos = (Vector2){10, SCREEN_HEIGHT - 80};
+	Vector2 level_bar_pos = (Vector2){10, SCREEN_HEIGHT - 60};
 	
 	char text[CHAR_LIMIT]; sprintf(text, "LEVEL: %d", level);
 	DrawText(text, text_pos.x, text_pos.y, 20, GREEN);
@@ -466,8 +466,10 @@ void updatePlayer(TileList* walls, TileList* heals, EntityList* enemies, Entity*
 	animate(&player->animation);
 	movement(walls, player, enemies);
 	encounterHeals(player, &world.health_buffs);
-	showHealth(player->health);
-	showLevels(player->level, player->exp);
+	
+	// player combat
+	for(int i = 0; i < enemies->size; i++) dealDamage(&enemies->entities[i], player);
+
 	DrawTexturePro(player->tx, (Rectangle){player->animation.xfp * TILE_SIZE, player->animation.yfp * TILE_SIZE, TILE_SIZE, TILE_SIZE},
 									getObjectArea(player->pos), (Vector2){0,0}, 0, WHITE);
 } 
@@ -516,6 +518,8 @@ int main()
 					EndMode2D();
 					// game mechanics
 					createMobs(&world);
+					showHealth(player.health);
+					showLevels(player.level, player.exp);
 					break;
 				case DEAD: deathScreen(); break;
 				default:
@@ -527,6 +531,5 @@ int main()
     deinit();
     return 0;
 }
-// TODO - refactor BetterTexture struct and functions
-// make world, player, and mouse position variable global
-// change editor to not output frame count
+
+// add damage buff door mechanic and interactable?

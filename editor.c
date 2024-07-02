@@ -36,8 +36,6 @@ const char* SPAWN_PATH = "spawn.txt";
 
 const Tile NULL_TILE = {(Vector2){}, (Vector2){}, (Texture2D){}, UNDF, "", false, (Animation){}};
 
-EditState state = EDIT;
-
 void resizeTileList(TileList* tl) 
 {
     tl->cap *= 2;
@@ -221,13 +219,10 @@ void loadBtn(GuiWindowFileDialogState* directory, World* world, TileList* avail_
     }
 }
 
-void deleteBtn(World* world)
-{
-    const char* BTN_TXT = "DELETE";
-    const Rectangle BTN_AREA = {137, 3, 65, 20};
+void deleteBtn(World* world) { if(GuiButton((Rectangle){137, 3, 65, 20}, "DELETE")) deleteWorld(world); }
 
-    if(GuiButton(BTN_AREA, BTN_TXT)) deleteWorld(world);
-}
+void focusBtn(Camera2D* camera) { if(GuiButton((Rectangle){ 204, 3, 50, 20 }, "FOCUS")) camera->target = (Vector2){ 0, 0 }; }
+
 
 void saveLayer(TileList* layer, char* path)
 {
@@ -251,7 +246,7 @@ void saveSpawn(Vector2 spawn)
     fclose(file);
 }
 
-void saveWorldBtn(World* world, Tile* curr_tile, bool* showInputTextBox, char* path)
+void saveBtn(World* world, Tile* curr_tile, bool* showInputTextBox, char* path)
 {
     const Rectangle BTN_AREA = {3, 3, 65, 20}; 
     const Rectangle INPUT_WINDOW_AREA = {376, 436, 240, 140};
@@ -391,14 +386,14 @@ void drawWorld(World* world, Camera2D camera)
 
 void editLayer(Editor* editor, Rectangle world_area)
 {
-    // deletion
+    // tile deletion
     int delete = -1;
     if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) for(int i = 0; i < editor->curr_layer->size; i++)  if(Vector2Equals(editor->mouse_pos, editor->curr_layer->list[i].sp)) delete = i;
     if(delete >= 0) deleteTile(editor->curr_layer, delete);
 
+    // tile creation
     if(!isnull(editor->curr_tile))
     {
-        // creation
         if(IsMouseButtonDown(MOUSE_BUTTON_LEFT))
         {
             bool add = true;
@@ -472,24 +467,14 @@ void moveWorldDisplay(Camera2D* camera, Vector2* mp)
     camera->target = Vector2Add(camera->target, delta);
 }
 
-void focusBtn(Camera2D* camera)
+void toggleEditorState(EditState* state)
 {
-    const Rectangle BTN_BORDER = { 204, 3, 50, 20 };
-    const char* BTN_TXT = "FOCUS";
-
-    const Vector2 ORIGIN = { 0,0 };
-
-    if(GuiButton(BTN_BORDER, BTN_TXT)) camera->target = ORIGIN;
+    if(IsKeyPressed(KEY_E)) *state = EDIT;
+    else if(IsKeyPressed(KEY_S)) *state = SPAWN;
+    else if(IsKeyPressed(KEY_F)) *state = FREE;
 }
 
-void toggleEditState()
-{
-    if(IsKeyPressed(KEY_E)) state = EDIT;
-    else if(IsKeyPressed(KEY_S)) state = SPAWN;
-    else if(IsKeyPressed(KEY_F)) state = FREE;
-}
-
-void showCurrentState()
+void showCurrentState(EditState state)
 {
     char text[CHAR_LIMIT];
     Color color;
@@ -538,6 +523,7 @@ int main()
     World world;
     Editor editor;
     Camera2D camera;
+    EditState state;
     bool showInputTextBox = false;
     GuiWindowFileDialogState fileDialogState;
     init(&camera, &world, &editor, &fileDialogState);
@@ -545,12 +531,14 @@ int main()
     // preventing adding tiles when on other panels
     const Rectangle DEAD_ZONE_1 = {3, 32, 256, 584};
     const Rectangle DEAD_ZONE_2 = {829, 32, 160, 362};
+
     while(!WindowShouldClose())
     {
-        toggleEditState();
+        toggleEditorState(&state);
         editor.mouse_pos = mousePosition(camera);
         if(showInputTextBox || fileDialogState.windowActive) state = FREE;
         BeginDrawing();
+            
             ClearBackground(RAYWHITE);
             switch (state)
             {
@@ -569,16 +557,22 @@ int main()
                 default:
                     break;
             }
+
             drawWorld(&world, camera);
+            showCurrentState(state);
+
+            // editing mechs
             editBoard(&editor.avail_tiles, &editor.curr_tile);
             chooseLayer(&world, &editor.curr_type, &editor.curr_layer);
             editWorldSize(&editor.width, &editor.height, &world.area.width, &world.area.height);
             animateTiles(&editor.animation_speed, &editor.nframes);
+
+            // buttons            
             deleteBtn(&world);
             focusBtn(&camera);
-            showCurrentState();
-            saveWorldBtn(&world, &editor.curr_tile, &showInputTextBox, editor.path);
+            saveBtn(&world, &editor.curr_tile, &showInputTextBox, editor.path);
             loadBtn(&fileDialogState, &world, &editor.avail_tiles, &editor.curr_tile, &editor.curr_texture, editor.path);
+
             GuiWindowFileDialog(&fileDialogState);
         EndDrawing();
     }
