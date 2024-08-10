@@ -4,6 +4,10 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include "headers/animation.h"
+#include "headers/raylib.h"
+#include "headers/tile.h"
 #include "headers/worldbuilder.h"
 
 #define RAYGUI_IMPLEMENTATION
@@ -39,53 +43,67 @@ const char* SPAWN_PATH = "spawn.txt";
 
 const Tile NULL_TILE = {(Vector2){}, (Vector2){}, (Texture2D){}, UNDF, "", false, (Animation){}};
 
-bool isnull(Tile tile) { return (tile.tt == UNDF); }
-
-bool inbounds(Vector2 pos, Rectangle area) { return ((pos.x + SCREEN_TILE_SIZE) <= (area.x + area.width)) && (((pos.y + SCREEN_TILE_SIZE) <= (area.y + area.height))); }
-
 void drawTile(Tile tile, int size) { DrawTexturePro(tile.tx, get_object_area(tile.src, TILE_SIZE), get_object_area(tile.sp, size), (Vector2){0,0}, 0, WHITE);}
 
-Vector2 mousePosition(Camera2D camera)
+Vector2 get_gridded_mouse_position(Camera2D camera)
 {
     Vector2 pos = GetScreenToWorld2D(GetMousePosition(), camera);
+
     pos.x = (((int)pos.x >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
     pos.y = (((int)pos.y >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
+    
     return pos;
 }
 
-Editor initEditor() { return (Editor){NULL_TILE, create_tilelist(), NULL, (Texture2D){}, UNDF, GetMousePosition(), "", 16.0f, 16.0f, 0.0f, 0.0f}; }
-
-void readImage(TileList* avail_tiles, Texture2D texture, char* path)
+Editor create_editor()
 {
-    Vector2 cp = {0,0};
+    Editor editor;
 
-    while((cp.x < texture.width) && (cp.y < texture.height))
+    editor.curr_tile = NULL_TILE;
+    editor.avail_tiles = create_tilelist();
+    editor.curr_layer = NULL;
+    editor.animation_speed = 0;
+    editor.nframes = 0;
+
+    return editor;
+}
+
+void read_image(TileList* avail_tiles, Texture2D texture, char* path)
+{
+    Vector2 cp = {};
+
+    while(CheckCollisionPointRec(cp, (Rectangle) {0,0,texture.width, texture.height }))
     {
-        Tile tile = (Tile){cp, (Vector2){0, 0}, texture};
+        Tile tile;
+
+        tile.src = cp;
+        tile.sp = (Vector2){};
+        tile.tx = texture;
         strcpy(tile.fp, path);
+        
         add_tile(avail_tiles, tile);
 
-        // move along image, next row if at the end
-        if((cp.x += TILE_SIZE) == texture.width) cp = (Vector2){0, (cp.y + TILE_SIZE)};
+        if((cp.x += TILE_SIZE) == texture.width) 
+            cp = (Vector2){ 0, (cp.y + TILE_SIZE) };
     }
 }
 
-void loadBtn(GuiWindowFileDialogState* directory, World* world, TileList* avail_tiles, Tile* curr_tile, Texture2D* curr_texture, char* path)
+void load_button(GuiWindowFileDialogState* directory, World* world, TileList* avail_tiles, Tile* curr_tile, Texture2D* curr_texture, char* path)
 {
-    const Rectangle BTN_AREA = {70, 3, 65, 20};
-	
-    if (GuiButton(BTN_AREA, GuiIconText(ICON_FILE_OPEN, "LOAD"))) directory->windowActive = true;
+    if (GuiButton((Rectangle){ 70, 3, 65, 20 }, GuiIconText(ICON_FILE_OPEN, "LOAD"))) 
+        directory->windowActive = true;
 
     if(directory->SelectFilePressed)
     {
         *curr_tile = NULL_TILE;
+
 		strcpy(path,TextFormat("%s" PATH_SEPERATOR "%s", directory->dirPathText,directory->fileNameText));
         
         // loading sprite
         if (IsFileExtension(directory->fileNameText, ".png"))
 		{
 			*curr_texture = add_texture(&world->textures, path);
-            readImage(avail_tiles, *curr_texture, path);
+            read_image(avail_tiles, *curr_texture, path);
 		}
 
         // loading world
@@ -101,55 +119,51 @@ void loadBtn(GuiWindowFileDialogState* directory, World* world, TileList* avail_
     }
 }
 
-void deleteBtn(World* world) { if(GuiButton((Rectangle){137, 3, 65, 20}, "DELETE")) clear_world(world); }
-
-void focusBtn(Camera2D* camera) { if(GuiButton((Rectangle){ 204, 3, 50, 20 }, "FOCUS")) camera->target = (Vector2){ 0, 0 }; }
-
-void saveLayer(TileList* layer, char* path)
-{
-    FILE* file = fopen(path, "a");
-    if(file == NULL) { printf("error saving layer\n"); return; }
-
-    for(int i = 0; i < layer->size; i++)
-    {
-        Tile t = layer->list[i];
-        fprintf(file, "%.2f,%.2f,%.2f,%.2f,%d,%s,%d,%d,%d\n", t.src.x, t.src.y, t.sp.x, t.sp.y, t.tt, t.fp, t.animated, t.animtaion.nframes, t.animtaion.fspeed); 
-    }
-
-    fclose(file);
+void delete_world_button(World* world)
+{ 
+    if(GuiButton((Rectangle){ 137, 3, 65, 20 }, "DELETE")) 
+        clear_world(world); 
 }
 
-void saveSpawn(Vector2 spawn)
+void focus_button(Camera2D* camera)
+{ 
+    if(GuiButton((Rectangle){ 204, 3, 50, 20 }, "FOCUS")) 
+        camera->target = (Vector2){}; 
+}
+
+void save_spawn_point(Vector2 spawn)
 {
     FILE* file = fopen(SPAWN_PATH, "w");
-    if(file == NULL) return;
+    if(file == NULL)
+    {
+        printf("failed to save spawn point\n");
+        return;
+    }
+
     fprintf(file, "%.2f,%.2f\n", spawn.x, spawn.y);
     fclose(file);
 }
 
-void saveBtn(World* world, Tile* curr_tile, bool* showInputTextBox, char* path)
+void save_button(World* world, Tile* curr_tile, bool* showInputTextBox, char* path)
 {
-    const Rectangle BTN_AREA = {3, 3, 65, 20}; 
-    const Rectangle INPUT_WINDOW_AREA = {376, 436, 240, 140};
-	
-    if (GuiButton(BTN_AREA,GuiIconText(ICON_FILE_SAVE, "SAVE"))) *showInputTextBox = true;
+    if (GuiButton((Rectangle){ 3, 3, 65, 20 },GuiIconText(ICON_FILE_SAVE, "SAVE"))) 
+        *showInputTextBox = true;
 
     if(*showInputTextBox)
     {
         *curr_tile = NULL_TILE; 
-        int result = GuiTextInputBox(INPUT_WINDOW_AREA,GuiIconText(ICON_FILE_SAVE, "Save file as..."),
-						"file name:", "Ok;Cancel", path, 255, NULL);
+        int result = GuiTextInputBox((Rectangle){ 376, 436, 240, 140 },GuiIconText(ICON_FILE_SAVE, "Save file as..."),"file name:", "Ok;Cancel", path, 255, NULL);
 
-        // save world to 'x', where 'x' is the inputted filename
+        // saving world 
         if((result == 1) && (strlen(path) > 0))
         {
-            saveSpawn(world->spawn);
-            saveLayer(&world->walls, path);
-            saveLayer(&world->doors, path);
-            saveLayer(&world->floors, path);
-            saveLayer(&world->health_buffs, path);
-            saveLayer(&world->damage_buffs, path);
-            saveLayer(&world->interactables, path);
+            save_spawn_point(world->spawn);
+            save_tilelist(&world->walls, path);
+            save_tilelist(&world->doors, path);
+            save_tilelist(&world->floors, path);
+            save_tilelist(&world->health_buffs, path);
+            save_tilelist(&world->damage_buffs, path);
+            save_tilelist(&world->interactables, path);
         }
 
         // reset flag upon saving and premature exit
@@ -161,67 +175,59 @@ void saveBtn(World* world, Tile* curr_tile, bool* showInputTextBox, char* path)
     }
 }
 
-int DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
-
-void trashBtn(TileList* avail_tiles, Tile* curr_tile)
+void clear_workspace_button(TileList* avail_tiles, Tile* curr_tile)
 {
-    const Rectangle BTN_AREA = {235, 32, 24, 24};
-
-    if (GuiButton(BTN_AREA ,GuiIconText(ICON_BIN, "")))
+    if (GuiButton((Rectangle){ 235, 32, 24, 24 } ,GuiIconText(ICON_BIN, "")))
 	{
 		*curr_tile = NULL_TILE;
-        DISPLAY_TILE_SIZE = SCREEN_TILE_SIZE;
-        while(avail_tiles->size != 0) delete_tile(avail_tiles, 0);
+        clear_tilelist(avail_tiles);
 	}
 }
 
-void editBoard(TileList* avail_tiles, Tile* curr_tile)
+void tile_workspace(TileList* avail_tiles, Tile* curr_tile)
 {
-    const char* PANEL_TXT = "TILES";
-    
     const int TILES_PER_ROW = 8;
     const int MAX_ROWS = 15;
 
-    const Rectangle PANEL_BORDER = { 3, 32, (TILES_PER_ROW * SCREEN_TILE_SIZE), (MAX_ROWS * SCREEN_TILE_SIZE) };
-    const Vector2 LAST_TILE_POS = { (((TILES_PER_ROW - 1) * SCREEN_TILE_SIZE) + PANEL_BORDER.x), (MAX_ROWS * SCREEN_TILE_SIZE) - 8 };
+    const int NTILES = TILES_PER_ROW * MAX_ROWS;
+    int itr = avail_tiles->size > NTILES ? NTILES : avail_tiles->size;
 
-    GuiPanel(PANEL_BORDER, PANEL_TXT);
-    trashBtn(avail_tiles, curr_tile); 
+    GuiPanel((Rectangle){ 3, 32, 256, 504 }, "TILES");
+
+    clear_workspace_button(avail_tiles, curr_tile);
     
-    Vector2 cp = { PANEL_BORDER.x, (PANEL_BORDER.y + 24) }; // pos of ith tile to be drawn
-    
-    for(int i = 0; i < avail_tiles->size; i++, (cp.x += DISPLAY_TILE_SIZE))
+    Vector2 cp = { 3, 56 };
+
+    for(int i = 0; i < itr; i++, (cp.x += SCREEN_TILE_SIZE))
     {
         // next row transition
-        if(cp.x == (PANEL_BORDER.x + PANEL_BORDER.width)) cp = (Vector2){ PANEL_BORDER.x, (cp.y + DISPLAY_TILE_SIZE) };
-        // tile overflow
-        if(Vector2Equals(cp, LAST_TILE_POS)) DISPLAY_TILE_SIZE /= 2.0f;
+        if(((i % TILES_PER_ROW) == 0) && (i != 0)) 
+            cp = (Vector2){ 3, (cp.y + SCREEN_TILE_SIZE) };
 
         Tile tile = avail_tiles->list[i];
         tile.sp = cp; 
 
-        drawTile(tile, DISPLAY_TILE_SIZE);
+        drawTile(tile, SCREEN_TILE_SIZE);
 
         // choosing a tile 
-        if (CheckCollisionPointRec(GetMousePosition(),get_object_area(tile.sp, DISPLAY_TILE_SIZE)))
+        if (CheckCollisionPointRec(GetMousePosition(),get_object_area(tile.sp, SCREEN_TILE_SIZE)))
         {
-            DrawRectangleLinesEx(get_object_area(tile.sp, DISPLAY_TILE_SIZE), 2, BLUE);
-            if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) *curr_tile = tile;
+            if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) 
+                *curr_tile = tile;
+
+            DrawRectangleLinesEx(get_object_area(tile.sp, SCREEN_TILE_SIZE), 2, BLUE);
         }
     }
     
-    // highlighting current tile
-    if(curr_tile->tx.id > 0) DrawRectangleLinesEx(get_object_area(curr_tile->sp, DISPLAY_TILE_SIZE), 2, GREEN);
+    // highlight current tile
+    if(curr_tile->tx.id > 0) 
+        DrawRectangleLinesEx(get_object_area(curr_tile->sp, SCREEN_TILE_SIZE), 2, GREEN);
 }
 
-void chooseLayer(World* world, TileType* curr_type, TileList** curr_layer)
+void select_layer_panel(World* world, TileType* curr_type, TileList** curr_layer)
 {
-	const Rectangle PANEL_BORDER = { 829, 32, 160, 210 };
-    const Rectangle TOGGLE_BORDER = { 845, 72, 128, 24 };
-    const char* PANEL_TXT = "LAYER TO EDIT";
-
-    GuiPanel(PANEL_BORDER, PANEL_TXT);
-    GuiToggleGroup(TOGGLE_BORDER,"WALLS \n FLOORS \n DOORS \n BUFFS (HEALTH) \n BUFFS (DAMAGE) \n INTERACTABLES", curr_type);
+    GuiPanel((Rectangle){ 829, 32, 160, 210 }, "LAYER TO EDIT");
+    GuiToggleGroup((Rectangle){ 845, 72, 128, 24 },"WALLS \n FLOORS \n DOORS \n BUFFS (HEALTH) \n BUFFS (DAMAGE) \n INTERACTABLES", curr_type);
 
     // updating layer
     switch (*curr_type)
@@ -237,162 +243,156 @@ void chooseLayer(World* world, TileType* curr_type, TileList** curr_layer)
     }
 }
 
-void chooseSpawnPos(Rectangle world_area, Vector2* spawn, Camera2D camera) { if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(GetScreenToWorld2D(GetMousePosition(), camera), world_area)) *spawn = GetScreenToWorld2D(GetMousePosition(), camera); }
-
-void drawLayer(TileList* layer, Rectangle world_area, Color color, char* dsc)
+void select_spawn_point(Rectangle world_area, Vector2* spawn, Camera2D camera)
 {
-    for(int i = 0; i < layer->size; i++) 
+    Vector2 spawn_point = GetScreenToWorld2D(GetMousePosition(), camera); 
+    
+    if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(spawn_point, world_area)) 
+        *spawn = GetScreenToWorld2D(GetMousePosition(), camera); 
+}
+
+void draw_world(World* world)
+{
+    draw_tilelist(&world->walls,world->area, RED, SCREEN_TILE_SIZE, "W");
+    draw_tilelist(&world->floors,world->area, ORANGE,SCREEN_TILE_SIZE, "F");
+    draw_tilelist(&world->doors,world->area, YELLOW, SCREEN_TILE_SIZE, "D");
+    draw_tilelist(&world->health_buffs, world->area, GREEN, SCREEN_TILE_SIZE, "HB");
+    draw_tilelist(&world->damage_buffs, world->area, BLUE, SCREEN_TILE_SIZE, "DB");
+    draw_tilelist(&world->interactables, world->area,PURPLE, SCREEN_TILE_SIZE, "I");
+    DrawText("S", world->spawn.x, world->spawn.y, 5, PINK);
+    DrawRectangleLinesEx(world->area, 3, GRAY);
+}
+
+void edit_layer(Editor* editor, Rectangle world_area)
+{
+    // deletion
+    if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) 
     {
-        if(!isnull(layer->list[i]) && inbounds(layer->list[i].sp, world_area)) 
+        for(int i = 0; i < editor->curr_layer->size; i++)
+            if(Vector2Equals(editor->mouse_pos, editor->curr_layer->list[i].sp)) 
+                delete_tile(editor->curr_layer, i);
+    }
+
+    // creation
+    if((editor->curr_tile.tt != UNDF) && IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+    {
+        bool add = true;
+        
+        // prevent adding tile on same space
+        for(int i = 0; (i < editor->curr_layer->size) && (add); i++)
         {
-            drawTile(layer->list[i], SCREEN_TILE_SIZE); 
-            DrawText(dsc, layer->list[i].sp.x, layer->list[i].sp.y, 3, color);
+            if(Vector2Equals(editor->mouse_pos, editor->curr_layer->list[i].sp)) 
+                add = false;
+        }
+
+        if(add)
+        {
+            bool animate = ((editor->animation_speed > 0) && (editor->nframes > 0));
+            Animation tile_animation;
+            Tile tile;
+
+            tile_animation.nframes = editor->nframes;
+            tile_animation.fcount = 0;
+            tile_animation.fspeed = animate ? (FPS / editor->animation_speed) : 0;
+            tile_animation.xfposition = tile_animation.yfposition = 0;
+
+            tile.src = editor->curr_tile.src;
+            tile.sp = editor->mouse_pos;    
+            tile.tx = editor->curr_tile.tx;    
+            tile.tt = editor->curr_type;
+            strcpy(tile.fp, editor->curr_tile.fp);
+            tile.animated = animate;
+            tile.animtaion = tile_animation;
+            
+            add_tile(editor->curr_layer, tile);
         }
     }
 }
 
-void drawWorld(World* world, Camera2D camera)
+void edit_world_size_panel(float* world_width, float* world_height)
 {
-    BeginMode2D(camera);
-        drawLayer(&world->walls,world->area, RED, "W");
-        drawLayer(&world->floors,world->area, ORANGE, "F");
-        drawLayer(&world->doors,world->area, YELLOW, "D");
-        drawLayer(&world->health_buffs, world->area, GREEN, "HB");
-        drawLayer(&world->damage_buffs, world->area, BLUE, "DB");
-        drawLayer(&world->interactables, world->area,PURPLE, "I");
-        DrawText("S", world->spawn.x, world->spawn.y, 5, PINK);
-        DrawRectangleLinesEx(world->area, 3, GRAY);
-    EndMode2D();
+    GuiPanel((Rectangle){ 829 , 280, 160, 90 }, "WORLD SIZE");
+    
+    DrawText("WIDTH", 860, 315, 10, GRAY);
+    DrawText("HEIGHT", 860, 345, 10, GRAY);
+
+    // adj width
+    if(GuiButton((Rectangle){ 910, 310, 20, 20 }, "+")) 
+        *world_width += SCREEN_TILE_SIZE; 
+    if(GuiButton((Rectangle){ 933, 310, 20, 20 }, "-") && (*world_width > SCREEN_TILE_SIZE)) 
+        *world_width -= SCREEN_TILE_SIZE;
+
+    // adj height
+    if(GuiButton((Rectangle){ 910, 340, 20, 20 }, "+")) 
+        *world_height += SCREEN_TILE_SIZE; 
+    if(GuiButton((Rectangle){ 933, 340, 20, 20 }, "-") && (*world_height > SCREEN_TILE_SIZE))
+         *world_height -= SCREEN_TILE_SIZE;
 }
 
-void editLayer(Editor* editor, Rectangle world_area)
+void edit_tile_animation_panel(float* fps, float* nframes)
 {
-    // tile deletion
-    int delete = -1;
-    if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) for(int i = 0; i < editor->curr_layer->size; i++)  if(Vector2Equals(editor->mouse_pos, editor->curr_layer->list[i].sp)) delete = i;
-    if(delete >= 0) delete_tile(editor->curr_layer, delete);
+    char text[CHAR_LIMIT];
 
-    // tile creation
-    if(!isnull(editor->curr_tile))
+    GuiPanel((Rectangle){3, 545, 256, 80}, "ANIMATION");
+
+    sprintf(text, "%.0f FPS", *fps);
+    GuiSliderBar((Rectangle){ 53, 580, 85, 10 }, "SPEED", text, fps, 0, 10);
+
+    sprintf(text, "%.0f", *nframes);
+    GuiSliderBar((Rectangle){ 90, 605, 85, 10 }, "# OF FRAMES", text, nframes, 0, 10);
+}
+
+void move_world(Camera2D* camera)
+{
+    if(IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
     {
-        if(IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-        {
-            bool add = true;
-            for(int i = 0; (i < editor->curr_layer->size) && (add); i++) if(Vector2Equals(editor->mouse_pos, editor->curr_layer->list[i].sp)) add = false;
-            if(add)
-            {
-                bool animate = ((editor->animation_speed > 0) && (editor->nframes > 0));
-                Tile tile = {editor->curr_tile.src, editor->mouse_pos, editor->curr_tile.tx, editor->curr_type, "", 
-                        animate, (Animation){editor->nframes, 0, animate ? (FPS / (int)editor->animation_speed) : 0}};
-                strcpy(tile.fp, editor->curr_tile.fp);
-                add_tile(editor->curr_layer, tile);
-            }
-        }
+        Vector2 delta = GetMouseDelta();
+        delta = Vector2Scale(delta, -1.0f / camera->zoom);
+        camera->target = Vector2Add(camera->target, delta);
     }
 }
 
-void editWorldSize(float* adjw, float* adjh, float* wwidth, float* wheight)
+void update_edit_state(EditState* state, bool is_window_active)
 {
-	const Rectangle PANEL_BORDER = { 829 , 280, 160, 90 };
-    const char* PANEL_TXT = "WORLD SIZE";
-
-    GuiPanel(PANEL_BORDER, PANEL_TXT);
-    
-    const Rectangle INC_WIDTH_BORDER = { 910, 310, 20, 20 };
-    const Rectangle DEC_WIDTH_BORDER = { 933, 310, 20, 20 };
-    const char* WIDTH = "WIDTH";
-
-    const Rectangle INC_HEIGHT_BORDER = { 910, 340, 20, 20 };
-    const Rectangle DEC_HEIGHT_BORDER = { 933, 340, 20, 20 };
-    const char* HEIGHT = "HEIGHT";
-    
-    const char* INC_TXT = "+";
-    const char* DEC_TXT = "-";
-
-    // adj width and height of world manually
-    DrawText(WIDTH, 860, 315, 10, GRAY);
-    if(GuiButton(INC_WIDTH_BORDER, INC_TXT)) *wwidth += SCREEN_TILE_SIZE; 
-    if(GuiButton(DEC_WIDTH_BORDER, DEC_TXT) && (*wwidth > SCREEN_TILE_SIZE)) *wwidth -= SCREEN_TILE_SIZE;
-
-    DrawText(HEIGHT, 860, 345, 10, GRAY);
-    if(GuiButton(INC_HEIGHT_BORDER, INC_TXT)) *wheight += SCREEN_TILE_SIZE; 
-    if(GuiButton(DEC_HEIGHT_BORDER, DEC_TXT) && (*wheight > SCREEN_TILE_SIZE)) *wheight -= SCREEN_TILE_SIZE;
+    if(IsKeyPressed(KEY_E)) 
+        *state = EDIT;
+    else if(IsKeyPressed(KEY_S)) 
+        *state = SPAWN;
+    else if(IsKeyPressed(KEY_F) || is_window_active) 
+        *state = FREE;
 }
 
-void animateTiles(float* fps, float* nframes)
+void display_current_edit_state(EditState state)
 {
-    const Rectangle PANEL_BORDER = {3, 525, 256, 80};
-    const char* PANEL_TXT = "ANIMATION";
-
-    GuiPanel(PANEL_BORDER, PANEL_TXT);
-
-    const Rectangle SPEED_SLIDER_BORDER = { 53, 560, 85, 10 };
-    const char* SSB_TXT = "SPEED";
-
-    const Rectangle FRAME_NUMBER_SLIDER = { 90, 585, 85, 10 };
-    const char* FNS_TXT = "# OF FRAMES";
-
-    char text[CHAR_LIMIT];
-
-    sprintf(text, "%d FPS", (int)(*fps));
-    GuiSliderBar(SPEED_SLIDER_BORDER, SSB_TXT, text, fps, 0, 10);
-
-    sprintf(text, "%d", (int)(*nframes));
-    GuiSliderBar(FRAME_NUMBER_SLIDER, FNS_TXT, text, nframes, 0, 10);
-}
-
-void moveWorldDisplay(Camera2D* camera, Vector2* mp)
-{
-    Vector2 delta = GetMouseDelta();
-    delta = Vector2Scale(delta, -1.0f / camera->zoom);
-    camera->target = Vector2Add(camera->target, delta);
-}
-
-void toggleEditorState(EditState* state)
-{
-    if(IsKeyPressed(KEY_E)) *state = EDIT;
-    else if(IsKeyPressed(KEY_S)) *state = SPAWN;
-    else if(IsKeyPressed(KEY_F)) *state = FREE;
-}
-
-void showCurrentState(EditState state)
-{
-    char text[CHAR_LIMIT];
-    Color color;
+    char text[2];
 
     switch (state)
     {
-        case EDIT: sprintf(text, "EDIT"); color = GREEN; break;
-        case SPAWN: sprintf(text, "SPAWN"); color = RED; break;
-        case FREE: sprintf(text, "FREE-VIEW"); color = BLUE; break;
-        default:
-            break;
+        case EDIT: sprintf(text, "E"); break;
+        case SPAWN: sprintf(text, "S"); break;
+        case FREE: sprintf(text, "F"); break;
     }
 
-    DrawText(text, (SCREEN_WIDTH - MeasureText(text, 20)) - 3, (SCREEN_HEIGHT - 20), 20, color);
-}
-
-void init(Camera2D* camera, World* world, Editor* editor, GuiWindowFileDialogState* fds)
-{
-    SetTargetFPS(FPS);
-	// SetTraceLogLevel(LOG_ERROR);
-	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "2D-Engine");
-
-    camera->zoom = 1.0f;
-    *world = create_world();
-    *editor = initEditor();
-    *fds = InitGuiWindowFileDialog(GetWorkingDirectory());
+    DrawText(text, (SCREEN_WIDTH - 20), (SCREEN_HEIGHT - 20), 20, DARKGRAY);
 }
 
 int main()
 {
-    World world;
-    Editor editor;
+    World world = create_world();
+    world.area = (Rectangle){ 288, 32, 512, 512 };
+
+    EditState state = FREE;
+    Editor editor = create_editor();
+
     Camera2D camera;
-    EditState state;
+    camera.zoom = 1;
+    
+    SetTargetFPS(FPS);
+    SetTraceLogLevel(LOG_ERROR);
+	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "2D-Engine");
+
     bool showInputTextBox = false;
-    GuiWindowFileDialogState fileDialogState;
-    init(&camera, &world, &editor, &fileDialogState);
+    GuiWindowFileDialogState fileDialogState = InitGuiWindowFileDialog(GetWorkingDirectory());
     
     // preventing adding tiles when on other panels
     const Rectangle DEAD_ZONE_1 = {3, 32, 256, 584};
@@ -400,22 +400,21 @@ int main()
 
     while(!WindowShouldClose())
     {
-        toggleEditorState(&state);
-        editor.mouse_pos = mousePosition(camera);
-        if(showInputTextBox || fileDialogState.windowActive) state = FREE;
+        editor.mouse_pos = get_gridded_mouse_position(camera);
+        update_edit_state(&state, (showInputTextBox || fileDialogState.windowActive));
+        
         BeginDrawing();
+            ClearBackground(RAYWHITE);  
             
-            ClearBackground(RAYWHITE);
             switch (state)
             {
-                case FREE: if(IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) moveWorldDisplay(&camera, &editor.mouse_pos); break;
-                case SPAWN: chooseSpawnPos(world.area, &world.spawn, camera); break;
+                case FREE: move_world(&camera); break;
+                case SPAWN: select_spawn_point(world.area, &world.spawn, camera); break;
                 case EDIT: 
-                    if((editor.curr_layer != NULL) && CheckCollisionPointRec(editor.mouse_pos, world.area) &&
-                        (!CheckCollisionPointRec(GetMousePosition(), DEAD_ZONE_1) && !CheckCollisionPointRec(GetMousePosition(), DEAD_ZONE_2)))
+                    if((editor.curr_layer != NULL) && CheckCollisionPointRec(editor.mouse_pos, world.area) && (!CheckCollisionPointRec(GetMousePosition(), DEAD_ZONE_1) && !CheckCollisionPointRec(GetMousePosition(), DEAD_ZONE_2)))
                     {
                         BeginMode2D(camera);
-                            editLayer(&editor, world.area);
+                            edit_layer(&editor, world.area);
                             DrawRectangleLinesEx(get_object_area(editor.mouse_pos, SCREEN_TILE_SIZE), 2, RED);
                         EndMode2D();
                     }
@@ -423,25 +422,24 @@ int main()
                 default:
                     break;
             }
+            
+            BeginMode2D(camera);
+                draw_world(&world);
+            EndMode2D();
 
-            drawWorld(&world, camera);
-            showCurrentState(state);
-
-            // editing mechs
-            editBoard(&editor.avail_tiles, &editor.curr_tile);
-            chooseLayer(&world, &editor.curr_type, &editor.curr_layer);
-            editWorldSize(&editor.width, &editor.height, &world.area.width, &world.area.height);
-            animateTiles(&editor.animation_speed, &editor.nframes);
-
-            // buttons            
-            deleteBtn(&world);
-            focusBtn(&camera);
-            saveBtn(&world, &editor.curr_tile, &showInputTextBox, editor.path);
-            loadBtn(&fileDialogState, &world, &editor.avail_tiles, &editor.curr_tile, &editor.curr_texture, editor.path);
-
+            display_current_edit_state(state);
+            tile_workspace(&editor.avail_tiles, &editor.curr_tile);
+            select_layer_panel(&world, &editor.curr_type, &editor.curr_layer);
+            edit_world_size_panel(&world.area.width, &world.area.height);
+            edit_tile_animation_panel(&editor.animation_speed, &editor.nframes);
+            delete_world_button(&world);
+            focus_button(&camera);
+            save_button(&world, &editor.curr_tile, &showInputTextBox, editor.path);
+            load_button(&fileDialogState, &world, &editor.avail_tiles, &editor.curr_tile, &editor.curr_texture, editor.path);
             GuiWindowFileDialog(&fileDialogState);
         EndDrawing();
     }
+    
     dealloc_world(&world);
     unload_textures(&world.textures);
     CloseWindow();    

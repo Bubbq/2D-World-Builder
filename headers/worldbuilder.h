@@ -57,7 +57,6 @@ void clear_world(World* world);
 void dealloc_world(World* world);
 void load_world(World* world, const char* file_path);
 Vector2 get_spawn_point(const char* spawn_path);
-void draw_world(World* world);
 Texture2D add_texture(Textures* textures, const char* file_path);
 Rectangle get_object_area(Vector2 position, int tile_size);
 Vector2 get_object_center(Vector2 position);

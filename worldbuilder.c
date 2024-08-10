@@ -3,6 +3,7 @@
 #include "headers/tile.h"
 #include <raylib.h>
 #include <raymath.h>
+#include <stdio.h>
 #include <string.h>
 
 void unload_textures(Textures* textures)
@@ -57,32 +58,32 @@ void load_world(World* world, const char* file_path)
     FILE* file = fopen(file_path, "r");
     
 	if(file == NULL) 
+	{
+		printf("error loading world\n");
 		return;
-
-    Vector2 source_texture_position;
-    Vector2 screen_position;
-    TileType tile_type;
-    char texture_path[CHAR_LIMIT];
-	bool is_animated;
-	int nframes;
-	int animation_speed;	
+	}
 
     while(fgets(line, sizeof(line), file))
     {
-        source_texture_position.x = atoi(strtok(line, ","));
-        source_texture_position.y = atoi(strtok(NULL, ","));
-        screen_position.x = atoi(strtok(NULL, ","));
-        screen_position.y = atoi(strtok(NULL, ","));
+		Tile tile;
 
-        tile_type = (TileType)atoi(strtok(NULL, ","));
-		strcpy(texture_path, strtok(NULL, ","));
+		tile.src.x = atoi(strtok(line, ","));
+		tile.src.y = atoi(strtok(NULL, ","));
 
-		is_animated = atoi(strtok(NULL, ","));
-		nframes = atoi(strtok(NULL, ","));
-		animation_speed = atoi(strtok(NULL, "\n"));
-        Tile tile = (Tile){source_texture_position, screen_position, add_texture(&world->textures, texture_path), tile_type, "", is_animated, (Animation){nframes, 0, animation_speed, 0, 0}};
+		tile.sp.x = atoi(strtok(NULL, ","));
+        tile.sp.y = atoi(strtok(NULL, ","));
 
-        switch (tile_type)
+		tile.tt = (TileType)atoi(strtok(NULL, ","));
+
+		strcpy(tile.fp, strtok(NULL, ","));
+		tile.tx = add_texture(&world->textures, tile.fp);
+
+		tile.animated = atoi(strtok(NULL, ","));
+		tile.animtaion.nframes = atoi(strtok(NULL, ","));
+		tile.animtaion.fspeed = atoi(strtok(NULL, "\n"));
+		tile.animtaion.xfposition = tile.animtaion.yfposition = 0;
+
+        switch (tile.tt)
 		{
 			case WALL: add_tile(&world->walls, tile); break;
 			case FLOOR: add_tile(&world->floors, tile); break;
@@ -112,16 +113,6 @@ Vector2 get_spawn_point(const char* spawn_path)
 		return (Vector2){ atof(strtok(info, ",")), atof(strtok(NULL, "\n")) };
 	}
 }	
-
-void draw_world(World* world)
-{
-	draw_tilelist(&world->floors, world->area);
-	draw_tilelist(&world->health_buffs, world->area);
-	draw_tilelist(&world->damage_buffs, world->area);
-	draw_tilelist(&world->doors, world->area);
-	draw_tilelist(&world->interactables, world->area);
-	draw_tilelist(&world->walls, world->area);
-}
 
 Texture2D add_texture(Textures* textures, const char* file_path)
 {

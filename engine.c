@@ -7,7 +7,6 @@
 #include "headers/raylib.h"
 #include <raymath.h>
 
-
 #define RAYGUI_IMPLEMENTATION
 #include "headers/raygui.h"
 #undef RAYGUI_IMPLEMENTATION
@@ -292,7 +291,12 @@ int main()
 				case ALIVE:
 					ClearBackground(BLACK);
 					BeginMode2D(camera);
-						draw_world(&world);
+						draw_tilelist(&world.floors, world.area, BLANK, 32, "");
+						draw_tilelist(&world.health_buffs, world.area, BLANK, 32, "");
+						draw_tilelist(&world.damage_buffs, world.area, BLANK, 32, "");
+						draw_tilelist(&world.doors, world.area, BLANK, 32, "");
+						draw_tilelist(&world.interactables, world.area, BLANK, 32 ,"");
+						draw_tilelist(&world.walls, world.area, BLANK, 32 ,"");
 						draw_entities(&world.entities, world.area);
 						DrawTexturePro(player.tx, (Rectangle){player.animation.xfposition * TILE_SIZE, player.animation.yfposition * TILE_SIZE, TILE_SIZE, TILE_SIZE},get_object_area(player.pos, SCREEN_TILE_SIZE), (Vector2){0,0}, 0, WHITE);
 					EndMode2D();

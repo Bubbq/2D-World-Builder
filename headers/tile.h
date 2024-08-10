@@ -35,14 +35,13 @@ typedef struct
 	Tile* list;
 } TileList;
 
-
 void resize_tilelist(TileList* tilelist);
 void add_tile(TileList* tilelist, Tile tile);
 void delete_tile(TileList* tilelist, int pos);
 TileList create_tilelist();
 int check_collision_tilelist(Rectangle en_area, TileList* tilelist); 
-void draw_tilelist(TileList* tilelist, Rectangle world_border);
+void draw_tilelist(TileList* tilelist, Rectangle world_border, Color text_color, int tile_size, const char* tile_desciptor);
 void dealloc_tilelist(TileList* tilelist);
 void clear_tilelist(TileList* tilelist);
-
+void save_tilelist(TileList* tilelist, const char* file_name);
 #endif
