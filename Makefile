@@ -1,10 +1,5 @@
-# to move in created world
-play:
-	gcc engine.c -o run -lraylib -lm -Wall 
-
-#  using the editor
-edit:
-	gcc editor.c -o run -lraylib -lm -Wall
+all:
+	gcc editor.c animation.c entity.c tile.c worldbuilder.c -o run -lraylib -lm -Wall 
 
 clean:
 	rm run
