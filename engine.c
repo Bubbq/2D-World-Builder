@@ -1,11 +1,8 @@
-#include <math.h>
-#include <raylib.h>
-#include <stdio.h>
-#include <stdlib.h>
-
+#include "headers/entity.h"
+#include "headers/tile.h"
 #include "headers/worldbuilder.h"
 #include "headers/raylib.h"
-#include <raymath.h>
+#include "headers/raymath.h"
 
 #define RAYGUI_IMPLEMENTATION
 #include "headers/raygui.h"
@@ -15,9 +12,9 @@ const int SCREEN_WIDTH = 992;
 const int SCREEN_HEIGHT = 992;
 
 // update path to world you have previously saved
-const char* WORLD_PATH = "test.txt";
+const char* WORLD_PATH = "";
 const char* SPAWN_PATH = "spawn.txt";
-const char* PLAYER_PATH = "Assets/player.png";
+const char* ENTITY_PATH = "Assets/player.png";
 
 const int TILE_SIZE = 16;
 const int SCREEN_TILE_SIZE = 32;
@@ -39,7 +36,7 @@ Entity create_player()
 	player.health = 100;
 	player.speed = 3;
 	player.pos = get_spawn_point(SPAWN_PATH);
-	player.tx = add_texture(&world.textures, PLAYER_PATH);
+	player.tx = add_texture(&world.textures, ENTITY_PATH);
 	player.animation = ENTITY_ANIMATION;
 	player.damage = 25;
 	player.level = 1;
@@ -55,7 +52,7 @@ Entity create_enemy()
 	enemy.health = 100;
 	enemy.speed = 2;
 	enemy.pos = mp;
-	enemy.tx = add_texture(&world.textures, PLAYER_PATH);
+	enemy.tx = add_texture(&world.textures, ENTITY_PATH);
 	enemy.animation = ENTITY_ANIMATION;
 	enemy.id = GetRandomValue(-1000, 1000);
 	enemy.damage = 10;
@@ -85,11 +82,11 @@ void move_enemy_entity(Entity* en)
 	Vector2 delta = Vector2Scale(en->direction, en->speed);
 
 	en->pos.x += delta.x;
-	if(check_collision_tilelist(get_object_area(en->pos, SCREEN_TILE_SIZE), &world.walls) >= 0 || check_collision_entity(en->id, get_object_center(en->pos), &world.entities) >= 0) 
+	if(check_collision_tilelist(get_object_area(en->pos, SCREEN_TILE_SIZE), &world.walls, SCREEN_TILE_SIZE) != -1 || check_collision_entity(en->id, get_object_center(en->pos), &world.entities) != -1) 
 		en->pos.x -= delta.x;
 	
 	en->pos.y += delta.y;
-	if(check_collision_tilelist(get_object_area(en->pos, SCREEN_TILE_SIZE), &world.walls) >= 0 || check_collision_entity(en->id, get_object_center(en->pos), &world.entities) >= 0) 
+	if(check_collision_tilelist(get_object_area(en->pos, SCREEN_TILE_SIZE), &world.walls, SCREEN_TILE_SIZE) != -1 || check_collision_entity(en->id, get_object_center(en->pos), &world.entities) != -1) 
 		en->pos.y -= delta.y;
 }
 
@@ -149,7 +146,7 @@ void player_movement(TileList* world_walls, Entity* player, EntityList* entities
 		player->animation.yfposition = 1;
 		player->pos.y -= player->speed;
 		
-		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls) >= 0) 
+		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls, SCREEN_TILE_SIZE) >= 0) 
 			player->pos.y += player->speed;
 	}
 	
@@ -158,7 +155,7 @@ void player_movement(TileList* world_walls, Entity* player, EntityList* entities
 		player->animation.yfposition = 3;
 		player->pos.x -= player->speed;
 
-		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls) >= 0) 
+		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls, SCREEN_TILE_SIZE) >= 0) 
 			player->pos.x += player->speed;
 	}
 	
@@ -167,7 +164,7 @@ void player_movement(TileList* world_walls, Entity* player, EntityList* entities
 		player->animation.yfposition = 0;
 		player->pos.y += player->speed;
 
-		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls) >= 0) 
+		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls, SCREEN_TILE_SIZE) >= 0) 
 			player->pos.y -= player->speed;
 	}
 	
@@ -176,29 +173,23 @@ void player_movement(TileList* world_walls, Entity* player, EntityList* entities
 		player->animation.yfposition = 2;
 		player->pos.x += player->speed;
 
-		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls) >= 0) 
+		if(check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), world_walls, SCREEN_TILE_SIZE) >= 0) 
 			player->pos.x -= player->speed;
 	}
 }
 
 void encounter_heals(Entity* player, TileList* heals)
 {
-	const char* HEAL_PROMPT = "PRESSING H WILL HEAL";
-	
-	int collided_health_buff_index;
-	Vector2 heal_prompt_pos = GetScreenToWorld2D((Vector2){SCREEN_WIDTH - 310, SCREEN_HEIGHT - 110}, camera);
+	int collided_health_buff = check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), heals, SCREEN_TILE_SIZE);
 
-	if( (collided_health_buff_index = check_collision_tilelist(get_object_area(player->pos, SCREEN_TILE_SIZE), heals)) != -1)
+	if(collided_health_buff != -1)
 	{
-		DrawText(HEAL_PROMPT, heal_prompt_pos.x, heal_prompt_pos.y, 20, RAYWHITE);
+		DrawText("PRESSING H WILL HEAL", (SCREEN_WIDTH - 310), (SCREEN_HEIGHT- 110), 20, RAYWHITE);
+
 		if((IsKeyPressed(KEY_H)) && (player->health < 100) && (is_timer_done(player->heal_speed))) 
 		{
-			player->health += 20;
-
-			if(player->health > 100) 
-				player->health = 100;
-
-			delete_tile(heals, collided_health_buff_index);
+			heal(player, 100, 20);
+			delete_tile(heals, collided_health_buff);
 			start_timer(&player->heal_speed, 0.5f);
 		}
 	}
@@ -216,7 +207,7 @@ void update_entities(EntityList* world_entities)
 		set_enemy_entity_direction(en);
 		move_enemy_entity(en);
 		animate(&en->animation);
-		deal_damage(en, &player);
+		deal_damage(en, &player, SCREEN_TILE_SIZE);
 	}
 }
 
@@ -228,15 +219,19 @@ void update_player(TileList* walls, TileList* heals, EntityList* enemies, Entity
 	
 	// combat
 	for(int i = 0; i < enemies->size; i++) 
+	{
 		if(enemies->entities[i].health > 0)
-			deal_damage(player, &enemies->entities[i]);
+			deal_damage(player, &enemies->entities[i], SCREEN_TILE_SIZE);
+	}
 } 
 
 void create_mobs(World* world)
 {
 	if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
-		if((check_collision_tilelist(get_object_area(mp, SCREEN_TILE_SIZE), &world->walls) == -1) && (check_collision_entity(0, get_object_center(mp), &world->entities) == -1))
+	{
+		if((check_collision_tilelist(get_object_area(mp, SCREEN_TILE_SIZE), &world->walls, SCREEN_TILE_SIZE) == -1) && (check_collision_entity(0, get_object_center(mp), &world->entities) == -1))
 			add_entity(&world->entities, create_enemy());
+	}
 }
 
 void display_player_health(float health)
@@ -264,7 +259,7 @@ void death_screen()
 	if(GuiButton((Rectangle){(GetScreenWidth() / 2.0f) - 125, (GetScreenHeight() / 2.0f) + 50, 100, 50}, "RESPAWN"))
 	{
 		player = create_player();
-		reset_entitylist(&world.entities);
+		clear_entitylist(&world.entities);
 	}
 
 	// quit btn
@@ -285,19 +280,15 @@ int main()
 		update_entities(&world.entities);
 		update_player(&world.walls, &world.health_buffs, &world.entities, &player);
 		create_mobs(&world);
+		animate_world(&world);
 		BeginDrawing();
 			switch(status)
 			{
 				case ALIVE:
 					ClearBackground(BLACK);
 					BeginMode2D(camera);
-						draw_tilelist(&world.floors, world.area, BLANK, 32, "");
-						draw_tilelist(&world.health_buffs, world.area, BLANK, 32, "");
-						draw_tilelist(&world.damage_buffs, world.area, BLANK, 32, "");
-						draw_tilelist(&world.doors, world.area, BLANK, 32, "");
-						draw_tilelist(&world.interactables, world.area, BLANK, 32 ,"");
-						draw_tilelist(&world.walls, world.area, BLANK, 32 ,"");
-						draw_entities(&world.entities, world.area);
+						draw_world(&world, SCREEN_TILE_SIZE, TILE_SIZE);
+						draw_entities(&world.entities, world.area, SCREEN_TILE_SIZE, TILE_SIZE);
 						DrawTexturePro(player.tx, (Rectangle){player.animation.xfposition * TILE_SIZE, player.animation.yfposition * TILE_SIZE, TILE_SIZE, TILE_SIZE},get_object_area(player.pos, SCREEN_TILE_SIZE), (Vector2){0,0}, 0, WHITE);
 					EndMode2D();
 					display_player_health(player.health);

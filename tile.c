@@ -1,5 +1,6 @@
 #include <stdio.h>
-#include <stdlib.h>
+
+#include "headers/animation.h"
 #include "headers/raylib.h"
 #include "headers/tile.h"
 
@@ -39,11 +40,11 @@ TileList create_tilelist()
     return tilelist;
 }
 
-int check_collision_tilelist(Rectangle object_area, TileList* tilelist) 
+int check_collision_tilelist(Rectangle object_area, TileList* tilelist, int tile_size) 
 {
 	for(int i = 0; i < tilelist->size; i++)
     {
-        Rectangle tile_area = (Rectangle){ tilelist->list[i].sp.x, tilelist->list[i].sp.y, 32, 32 };
+        Rectangle tile_area = (Rectangle){ tilelist->list[i].screen_position.x, tilelist->list[i].screen_position.y, tile_size, tile_size };
         
         if(CheckCollisionRecs(object_area, tile_area)) 
             return i;
@@ -52,20 +53,34 @@ int check_collision_tilelist(Rectangle object_area, TileList* tilelist)
     return -1;
 }
 
-void draw_tilelist(TileList* tilelist, Rectangle world_border, Color text_color, int tile_size, const char* tile_desciptor)
+void animate_tilelist(TileList *tilelist)
+{
+    for(int i = 0; i < tilelist->size; i++)
+    {
+        if(tilelist->list[i].is_animated)
+            animate(&tilelist->list[i].animtaion);
+    }
+}
+
+void draw_tilelist(TileList* tilelist, Rectangle world_border, int tile_size, int sprite_sheet_size)
 {	
     for(int i = 0; i < tilelist->size; i++)
     {
 		Tile* tile = &tilelist->list[i];
 
-		if(tile->animated) 
-            animate(&tile->animtaion);
+		if(CheckCollisionPointRec((Vector2){ tile->screen_position.x + (tile_size / 2.0), tile->screen_position.y + (tile_size / 2.0) }, world_border))
+			DrawTexturePro(tile->sprite, (Rectangle){tile->position_in_sprite.x + (tile->animtaion.xfposition * sprite_sheet_size), tile->position_in_sprite.y, sprite_sheet_size, sprite_sheet_size}, (Rectangle){ tile->screen_position.x, tile->screen_position.y, tile_size, tile_size}, (Vector2){}, 0, WHITE);
+    }
+}
 
-		if(CheckCollisionPointRec((Vector2){ tile->sp.x + (tile_size / 2.0), tile->sp.y + (tile_size / 2.0) }, world_border))
-        {
-			DrawTexturePro(tile->tx, (Rectangle){tile->src.x + (tile->animtaion.xfposition * 16), tile->src.y, 16, 16}, (Rectangle){ tile->sp.x, tile->sp.y, tile_size, tile_size}, (Vector2){0,0}, 0, WHITE);
-            DrawText(tile_desciptor, tile->sp.x, tile->sp.y, 3, text_color);
-        }
+void label_tilelist(TileList* tilelist, Rectangle world_border, Color text_color, int tile_size, const char* tile_descriptor)
+{
+    for(int i = 0; i < tilelist->size; i++)
+    {
+        Tile* tile = tilelist->list + i;
+
+        if(CheckCollisionPointRec(tile->screen_position, world_border))
+            DrawText(tile_descriptor, tile->screen_position.x, tile->screen_position.y, 3, text_color);
     }
 }
 
@@ -92,7 +107,7 @@ void save_tilelist(TileList* tilelist, const char* file_name)
     for(int i = 0; i < tilelist->size; i++)
     {
         Tile tile = tilelist->list[i];
-        fprintf(file, "%.2f,%.2f,%.2f,%.2f,%d,%s,%d,%d,%d\n", tile.src.x, tile.src.y, tile.sp.x, tile.sp.y, tile.tt, tile.fp, tile.animated, tile.animtaion.nframes, tile.animtaion.fspeed); 
+        fprintf(file, "%.2f,%.2f,%.2f,%.2f,%d,%s,%d,%d,%d\n", tile.position_in_sprite.x, tile.position_in_sprite.y, tile.screen_position.x, tile.screen_position.y, tile.tile_type, tile.sprite_file_path, tile.is_animated, tile.animtaion.nframes, tile.animtaion.fspeed); 
     }
 
     fclose(file);

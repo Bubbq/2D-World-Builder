@@ -1,16 +1,11 @@
-#include "headers/worldbuilder.h"
-#include "headers/entity.h"
-#include "headers/tile.h"
-#include <raylib.h>
-#include <raymath.h>
 #include <stdio.h>
 #include <string.h>
 
-void unload_textures(Textures* textures)
-{
-	for(int i = 0; i < textures->size; i++) 
-		UnloadTexture(textures->better_textures[i].tx);
-}
+#include "headers/worldbuilder.h"
+#include "headers/raylib.h"
+#include "headers/raymath.h"
+#include "headers/entity.h"
+#include "headers/tile.h"
 
 World create_world()
 {
@@ -52,11 +47,17 @@ void dealloc_world(World* world)
 	unload_textures(&world->textures);
 }
 
+void unload_textures(Textures* textures)
+{
+	for(int i = 0; i < textures->size; i++) 
+		UnloadTexture(textures->better_textures[i].tx);
+}
+
 void load_world(World* world, const char* file_path)
 {
     char line[CHAR_LIMIT];
+
     FILE* file = fopen(file_path, "r");
-    
 	if(file == NULL) 
 	{
 		printf("error loading world\n");
@@ -67,23 +68,23 @@ void load_world(World* world, const char* file_path)
     {
 		Tile tile;
 
-		tile.src.x = atoi(strtok(line, ","));
-		tile.src.y = atoi(strtok(NULL, ","));
+		tile.position_in_sprite.x = atoi(strtok(line, ","));
+		tile.position_in_sprite.y = atoi(strtok(NULL, ","));
 
-		tile.sp.x = atoi(strtok(NULL, ","));
-        tile.sp.y = atoi(strtok(NULL, ","));
+		tile.screen_position.x = atoi(strtok(NULL, ","));
+        tile.screen_position.y = atoi(strtok(NULL, ","));
 
-		tile.tt = (TileType)atoi(strtok(NULL, ","));
+		tile.tile_type = (TileType)atoi(strtok(NULL, ","));
 
-		strcpy(tile.fp, strtok(NULL, ","));
-		tile.tx = add_texture(&world->textures, tile.fp);
+		strcpy(tile.sprite_file_path, strtok(NULL, ","));
+		tile.sprite = add_texture(&world->textures, tile.sprite_file_path);
 
-		tile.animated = atoi(strtok(NULL, ","));
+		tile.is_animated = atoi(strtok(NULL, ","));
 		tile.animtaion.nframes = atoi(strtok(NULL, ","));
 		tile.animtaion.fspeed = atoi(strtok(NULL, "\n"));
 		tile.animtaion.xfposition = tile.animtaion.yfposition = 0;
 
-        switch (tile.tt)
+        switch (tile.tile_type)
 		{
 			case WALL: add_tile(&world->walls, tile); break;
 			case FLOOR: add_tile(&world->floors, tile); break;
@@ -99,18 +100,44 @@ void load_world(World* world, const char* file_path)
     fclose(file);
 }
 
+void draw_world(World *world, int tile_size, int sprite_sheet_size)
+{
+	draw_tilelist(&world->walls,world->area, tile_size, sprite_sheet_size);
+    draw_tilelist(&world->floors,world->area, tile_size, sprite_sheet_size);
+    draw_tilelist(&world->doors,world->area, tile_size, sprite_sheet_size);
+    draw_tilelist(&world->health_buffs, world->area, tile_size, sprite_sheet_size);
+    draw_tilelist(&world->damage_buffs, world->area,  tile_size, sprite_sheet_size);
+    draw_tilelist(&world->interactables, world->area, tile_size, sprite_sheet_size);
+}
+
+void animate_world(World* world)
+{
+	animate_tilelist(&world->walls);
+	animate_tilelist(&world->floors);
+	animate_tilelist(&world->doors);
+	animate_tilelist(&world->health_buffs);
+	animate_tilelist(&world->damage_buffs);
+	animate_tilelist(&world->interactables);
+}
+
 Vector2 get_spawn_point(const char* spawn_path)
 {
 	char info[CHAR_LIMIT];
-	FILE* file = fopen(spawn_path, "r");
 	
+	FILE* file = fopen(spawn_path, "r");
 	if(file == NULL) 
 		return (Vector2){};	
 	
 	else
 	{
 		fgets(info, sizeof(info), file);
-		return (Vector2){ atof(strtok(info, ",")), atof(strtok(NULL, "\n")) };
+		
+		Vector2 spawn_point;
+
+		spawn_point.x = atof(strtok(info, ","));
+		spawn_point.y = atof(strtok(NULL, "\n"));
+
+		return spawn_point;
 	}
 }	
 
@@ -122,9 +149,12 @@ Texture2D add_texture(Textures* textures, const char* file_path)
 			return textures->better_textures[i].tx;
 
 	// adding new texture
-	textures->better_textures[textures->size] = (BetterTexture){LoadTexture(file_path), ""};
-	strcpy(textures->better_textures[textures->size].fp, file_path);
-	textures->size++;
+	BetterTexture new_texture;
+
+	new_texture.tx = LoadTexture(file_path);
+	strcpy(new_texture.fp, file_path);
+
+	textures->better_textures[textures->size++] = new_texture;
 
 	return textures->better_textures[textures->size - 1].tx;
 }

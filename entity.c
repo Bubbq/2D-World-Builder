@@ -3,17 +3,6 @@
 #include "headers/entity.h"
 #include <stdlib.h>
 
-void start_timer(Timer *timer, double lifetime) 
-{
-	timer->startTime = GetTime();
-	timer->lifeTime = lifetime;
-}
-
-bool is_timer_done(Timer timer)
-{ 
-	return (GetTime() - timer.startTime) >= timer.lifeTime; 
-} 
-
 void resize_entitylist(EntityList* entitylist)
 {
 	entitylist->cap *= 2;
@@ -26,21 +15,6 @@ void add_entity(EntityList* entitylist, Entity entity)
         resize_entitylist(entitylist);
 
 	entitylist->entities[entitylist->size++] = entity;
-}
-
-void delete_entity(EntityList* entitylist, int entity_id)
-{
-    int i = 0;
-
-    // find index of entity to delete
-    for(; i < entitylist->size; i++) 
-        if(entitylist->entities[i].id == entity_id)
-            break;
-
-    for(; i < entitylist->size; i++) 
-        entitylist->entities[i] = entitylist->entities[i + 1];
-    
-    entitylist->size--;
 }
 
 EntityList create_entitylist()
@@ -58,7 +32,7 @@ int check_collision_entity(int entity_id, Vector2 entity_position, EntityList* e
 {
     for(int i = 0; i < entitylist->size; i++)
 	{
-		// self collision
+		// forget self collision and dead entities
 		if(entity_id == entitylist->entities[i].id || entitylist->entities[i].health <= 0) 
             continue;
 
@@ -71,7 +45,7 @@ int check_collision_entity(int entity_id, Vector2 entity_position, EntityList* e
 	return -1;
 }
 
-void reset_entitylist(EntityList* entitylist)
+void clear_entitylist(EntityList* entitylist)
 {
 	if(entitylist->size > 0) 
         free(entitylist->entities);
@@ -79,7 +53,7 @@ void reset_entitylist(EntityList* entitylist)
     *entitylist = create_entitylist();
 }
 
-void draw_entities(EntityList* entitylist, Rectangle world_border)
+void draw_entities(EntityList* entitylist, Rectangle world_border, int entity_size, int sprite_sheet_size)
 {
     for(int i = 0; i < entitylist->size; i++)
     {
@@ -87,21 +61,21 @@ void draw_entities(EntityList* entitylist, Rectangle world_border)
         if(entity->health <= 0)
             continue;
 
-        if(CheckCollisionPointRec((Vector2){ entity->pos.x + 16, entity->pos.y + 16 }, world_border))
+        if(CheckCollisionPointRec((Vector2){ entity->pos.x + (entity_size / 2.0), entity->pos.y + (entity_size / 2.0) }, world_border))
 		{
 			// health bar
 			DrawRectangle(entity->pos.x + 5, entity->pos.y - 7, 20 * (entity->health / 100), 7, RED);
 
             // entity sprite
-			DrawTexturePro(entity->tx, (Rectangle){entity->animation.xfposition * 16, entity->animation.yfposition * 16, 16, 16}, (Rectangle){ entity->pos.x, entity->pos.y, 32, 32}, (Vector2){0,0}, 0, WHITE);
+			DrawTexturePro(entity->tx, (Rectangle){entity->animation.xfposition * sprite_sheet_size, entity->animation.yfposition * sprite_sheet_size, sprite_sheet_size, sprite_sheet_size}, (Rectangle){ entity->pos.x, entity->pos.y, entity_size, entity_size}, (Vector2){0,0}, 0, WHITE);
 		}
     }
 }
 
-void deal_damage(Entity* entity, Entity* target)
+void deal_damage(Entity* entity, Entity* target, int entity_size)
 {
-    Rectangle entity_area = (Rectangle){ entity->pos.x, entity->pos.y, 32, 32 };
-    Rectangle target_area = (Rectangle){ target->pos.x, target->pos.y, 32, 32 };
+    Rectangle entity_area = (Rectangle){ entity->pos.x, entity->pos.y, entity_size, entity_size };
+    Rectangle target_area = (Rectangle){ target->pos.x, target->pos.y, entity_size, entity_size };
 
     if(CheckCollisionRecs(entity_area, target_area) && is_timer_done(entity->attack_speed))
     {
@@ -129,4 +103,12 @@ void gain_exp(Entity *entity)
 void dealloc_entitylist(EntityList* entitylist)
 {
     free(entitylist->entities);
+}
+
+void heal(Entity* entity, int max_health, int heal_amount)
+{
+    entity->health += heal_amount;
+
+    if(entity->health > max_health)
+        entity->health = max_health;
 }

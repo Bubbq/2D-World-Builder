@@ -1,9 +1,7 @@
 #ifndef WORLD_H
 #define WORLD_H
 
-#include <stdio.h>
-#include <raylib.h>
-
+#include "raylib.h"
 #include "animation.h"
 #include "entity.h"
 #include "tile.h"
@@ -56,6 +54,8 @@ World create_world();
 void clear_world(World* world);
 void dealloc_world(World* world);
 void load_world(World* world, const char* file_path);
+void draw_world(World* world, int tile_size, int sprite_sheet_size);
+void animate_world(World* world);
 Vector2 get_spawn_point(const char* spawn_path);
 Texture2D add_texture(Textures* textures, const char* file_path);
 Rectangle get_object_area(Vector2 position, int tile_size);
