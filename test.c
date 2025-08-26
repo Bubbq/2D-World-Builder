@@ -9,6 +9,17 @@
 
 #include "list.h"
 
+// basic utils
+
+int nearest_multiple(const float value, const int multiple)
+{
+    const int quotient = roundf(value / multiple);
+    const int nearest = quotient * multiple;
+    return nearest;
+}
+
+// basic utils
+
 typedef enum
 {
 	TILE_TYPE_WALL,
@@ -113,7 +124,7 @@ Rectangle get_gui_panel_content_bounds(const Rectangle gui_panel_bounds)
     };
 }
 
-// genaric ui utils
+// ui 
 
 typedef struct
 {
@@ -122,22 +133,34 @@ typedef struct
     Vector2 scrollbar;
 } ScrollPanel;
 
-void draw_infinite_grid(const Camera2D* camera, const float v_dist, const float h_dist)
+Rectangle get_world_bounds(const Rectangle screen_bounds, const Camera2D camera)
 {
-    if (!camera) 
-        return;
+    const Vector2 tr_screen = (Vector2) {
+        .x = screen_bounds.x,
+        .y = screen_bounds.y,
+    };
 
-    Vector2 top_left = GetScreenToWorld2D((Vector2){0, 0}, (*camera));
-    Vector2 bottom_right = GetScreenToWorld2D((Vector2){GetScreenWidth(), GetScreenHeight()}, (*camera));
+    const Vector2 tr_world = GetScreenToWorld2D(tr_screen, camera);
 
-    float start_x = floorf(top_left.x / v_dist) * v_dist;
-    float start_y = floorf(top_left.y / h_dist) * h_dist;
+    return (Rectangle) {
+        .x = tr_world.x,
+        .y = tr_world.y,
+        .width = screen_bounds.width,
+        .height = screen_bounds.height,
+    };
+}
 
-    for (float x = start_x; x <= bottom_right.x; x += v_dist)
-        DrawLine(x, top_left.y, x, bottom_right.y, GRAY);
+void draw_infinite_grid(const Rectangle bounds, const float v_dist, const float h_dist)
+{
+    const float x0 = nearest_multiple(bounds.x, v_dist);
 
-    for (float y = start_y; y <= bottom_right.y; y += h_dist)
-        DrawLine(top_left.x, y, bottom_right.x, y, GRAY);
+    for (float x = x0; x <= bounds.x + bounds.width; x += v_dist)
+        DrawLine(x, bounds.y, x, bounds.y + bounds.height, BLACK);
+
+    const float y0 = nearest_multiple(bounds.y, h_dist);
+    
+    for (float y = y0; y <= bounds.y + bounds.height; y += h_dist)
+        DrawLine(bounds.x, y, bounds.x + bounds.width, y, BLACK);
 }
 
 void move_camera(Camera2D* camera)
@@ -147,14 +170,37 @@ void move_camera(Camera2D* camera)
     camera->target = Vector2Add(camera->target, delta);
 }
 
-// genaric ui utils
-
-
-// application ui
-
-void draw_top_bar(const Rectangle container)
+void layout_dynamic_bar(const Rectangle container, const float padding, Rectangle* recs, const size_t nrecs)
 {
-    DrawRectangleRec(container, RED);
+    const float bar_w = container.width - (padding * (nrecs + 1));
+
+    const float widget_w = bar_w / nrecs;
+    const float widget_h = container.height - (padding * 2);
+
+    const float x0 = container.x + padding;
+    const float y0 = container.y + padding;
+
+    for (size_t i = 0; i < nrecs; i++) {
+        recs[i] = (Rectangle) {
+            .x = x0 + (i * widget_w) + (i > 0 ? padding : 0),
+            .y = y0,
+            .width = widget_w,
+            .height = widget_h,
+        };
+    }
+}
+
+void draw_top_bar(const Rectangle container, const float padding)
+{
+    const size_t widget_count = 2;
+    Rectangle widget_bounds[widget_count];
+    layout_dynamic_bar(container, padding, widget_bounds, widget_count);
+    
+    if (GuiButton(widget_bounds[0], GuiIconText(ICON_FILE_OPEN, "LOAD")))
+        ;
+
+    if (GuiButton(widget_bounds[1], GuiIconText(ICON_FILE_SAVE, "SAVE")))
+        ;
 }
 
 void draw_tile_scroll_panel(ScrollPanel* scroll_panel)
@@ -163,7 +209,7 @@ void draw_tile_scroll_panel(ScrollPanel* scroll_panel)
         return;
 
     const char* panel_text = "Tiles";
-    const bool is_scrollbar_visible = false;
+    const bool is_scrollbar_visible = true;
     GuiScrollPanel(scroll_panel->bounds, panel_text, scroll_panel->content, &scroll_panel->scrollbar, NULL, is_scrollbar_visible);
 }
 
@@ -172,21 +218,23 @@ void draw_side_bar(const Rectangle container, ScrollPanel* tile_scroll_panel)
     draw_tile_scroll_panel(tile_scroll_panel);
 }
 
-void draw_world(World* world, Camera2D* camera, const Rectangle world_border)
+void draw_world(World* world, Camera2D* camera, const Rectangle container)
 {
     if (!world || !camera)
         return;
-
-    DrawRectangleLinesEx(world_border, 1, GRAY);
     
-    BeginScissorMode(world_border.x, world_border.y, world_border.width, world_border.height);
+    if ((container.width > 0) && (container.height > 0))
+        DrawRectangleLinesEx(container, 1, GRAY);
+
+    BeginScissorMode(container.x, container.y, container.width, container.height);
         BeginMode2D((*camera));
-            draw_infinite_grid(camera, ON_SCREEN_TILE_SIZE, ON_SCREEN_TILE_SIZE);
+            const Rectangle world_bounds = get_world_bounds(container, (*camera));
+            draw_infinite_grid(world_bounds, ON_SCREEN_TILE_SIZE, ON_SCREEN_TILE_SIZE);
         EndMode2D();
     EndScissorMode();
 }
 
-// application ui
+// ui
 
 // parse texture passed by the user
 // need guiwindow file dialouge to queue the user
@@ -209,7 +257,7 @@ int main()
         .x = 0,
         .y = 0,
         .width = GetScreenWidth(),
-        .height = 150,
+        .height = 35,
     };
     
     Rectangle SIDE_BAR = {
@@ -255,7 +303,7 @@ int main()
 
         BeginDrawing();
             ClearBackground(WHITE);
-            draw_top_bar(TOP_BAR);
+            draw_top_bar(TOP_BAR, padding);
             draw_side_bar(SIDE_BAR, &tile_scroll_panel);
             draw_world(&world, &world_camera, get_padded_rectangle(padding, WORLD_BORDER));
         EndDrawing();
