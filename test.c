@@ -8,8 +8,9 @@
 #include "headers/gui_window_file_dialog.h"
 
 #include "list.h"
+#include "utils.h"
 
-// basic utils
+// basic utils/misc
 
 int nearest_multiple(const float value, const int multiple)
 {
@@ -18,7 +19,17 @@ int nearest_multiple(const float value, const int multiple)
     return nearest;
 }
 
-// basic utils
+bool get_selected_filepath(GuiWindowFileDialogState* file_dialog_state, char* dest, const size_t dest_size)
+{
+    if (!file_dialog_state)
+        return false;
+
+    const int written = snprintf(dest, dest_size, "%s/%s", file_dialog_state->dirPathText, file_dialog_state->fileNameText);
+    
+    return (0 < written) && (written < dest_size);
+}
+
+// basic utils/misc
 
 typedef enum
 {
@@ -48,6 +59,21 @@ typedef struct
     char* path;
 } Asset;
 
+Asset* asset_init(const char* path)
+{
+    if (!valid_string(path))
+        return NULL;
+
+    Asset* asset = malloc(sizeof(Asset));
+    if (!asset)
+        return NULL;
+
+    asset->path = strdup(path);
+    asset->texture = LoadTexture(path);
+
+    return asset;
+}
+
 void asset_free(void* to_free)
 {
     if (!to_free)
@@ -59,9 +85,40 @@ void asset_free(void* to_free)
         free(asset->path); asset->path = NULL;
     }
 
-    UnloadTexture(asset->texture);
+    if (IsTextureReady(asset->texture))
+        UnloadTexture(asset->texture);
     
     free(asset); asset = NULL;
+}
+
+bool asset_is_ready(Asset* asset)
+{
+    return (asset) && (valid_string(asset->path)) && (IsTextureReady(asset->texture));
+}
+
+void asset_append(List* asset_list, const char* asset_path)
+{
+    if (!asset_list || !valid_string(asset_path))
+        return;
+
+    Asset* asset = asset_init(asset_path);
+    if (!asset_is_ready(asset)) {
+        fprintf(stderr, "asset_append: failed to create Asset object\n");
+        asset_free(asset);
+        return;
+    }
+
+    // TODO: create a asset print function for debugging
+    const print_content_funct print_funct = NULL;
+
+    Node* node = node_init(asset, sizeof(Asset), print_funct, asset_free);
+    if (!node) {
+        fprintf(stderr, "asset_append: failed to create Node object\n");
+        asset_free(asset);
+        return;
+    }
+
+    list_append(asset_list, node);
 }
 
 typedef struct
@@ -190,14 +247,19 @@ void layout_dynamic_bar(const Rectangle container, const float padding, Rectangl
     }
 }
 
-void draw_top_bar(const Rectangle container, const float padding)
+void draw_top_bar(const Rectangle container, const float padding, bool* load_window_active)
 {
     const size_t widget_count = 2;
     Rectangle widget_bounds[widget_count];
     layout_dynamic_bar(container, padding, widget_bounds, widget_count);
     
+    if (!load_window_active)
+        GuiSetState(STATE_DISABLED);
+
     if (GuiButton(widget_bounds[0], GuiIconText(ICON_FILE_OPEN, "LOAD")))
-        ;
+        (*load_window_active) = true;
+
+    GuiSetState(STATE_NORMAL);
 
     if (GuiButton(widget_bounds[1], GuiIconText(ICON_FILE_SAVE, "SAVE")))
         ;
@@ -236,18 +298,36 @@ void draw_world(World* world, Camera2D* camera, const Rectangle container)
 
 // ui
 
-// parse texture passed by the user
-// need guiwindow file dialouge to queue the user
-    // when you press the button, should show a window of all the files you have
-    // once a PNG is pressed
-        // texture should be parsed into tiles (from user specified asset sprite size, in the future suppourt specified width and height) and stored in some display list
-        // path should be stored in the asset object
+#define VALID_TEXTURE_EXT ".png"
+
+void handle_file_select(GuiWindowFileDialogState* file_dialog_state, List* asset_list)
+{
+    if (!file_dialog_state || !asset_list) 
+        return;
+
+    if (!IsFileExtension(file_dialog_state->fileNameText, VALID_TEXTURE_EXT)) {
+        fprintf(stderr, "handle_file_select: \"%s\" is not a %s\n", file_dialog_state->fileNameText, VALID_TEXTURE_EXT);
+        return;
+    }
+
+    char asset_path[1024] = {0};
+    if (!get_selected_filepath(file_dialog_state, asset_path, sizeof(asset_path))) {
+        fprintf(stderr, "handle_file_select: failed to configure asset path\n");
+        return;
+    }
+
+    asset_append(asset_list, asset_path);
+
+    // TODO: parse texture into tiles based on user's asset size
+}
 
 int main()
 {
     editor_init();
 
-    // GuiWindowFileDialogState fileDialogState = InitGuiWindowFileDialog(GetWorkingDirectory());
+    GuiWindowFileDialogState file_dialog_state = InitGuiWindowFileDialog(GetWorkingDirectory());
+
+    List assets = list_init();
 
     World world = world_init();
 
@@ -298,16 +378,33 @@ int main()
         WORLD_BORDER.width = GetScreenWidth() - SIDE_BAR.width;
         WORLD_BORDER.height = GetScreenHeight() - TOP_BAR.height;
 
-        if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+        if (CheckCollisionPointRec(GetMousePosition(), WORLD_BORDER) && IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
             move_camera(&world_camera);
 
+        if (file_dialog_state.SelectFilePressed) {
+            file_dialog_state.SelectFilePressed = false;
+            handle_file_select(&file_dialog_state, &assets);
+        }
+
         BeginDrawing();
+
             ClearBackground(WHITE);
-            draw_top_bar(TOP_BAR, padding);
-            draw_side_bar(SIDE_BAR, &tile_scroll_panel);
+
+            if (file_dialog_state.windowActive) 
+                GuiLock();
+            
+            draw_top_bar(TOP_BAR, padding, &file_dialog_state.windowActive);
             draw_world(&world, &world_camera, get_padded_rectangle(padding, WORLD_BORDER));
+            draw_side_bar(SIDE_BAR, &tile_scroll_panel);
+            
+            GuiUnlock();
+
+            GuiWindowFileDialog(&file_dialog_state);
+
         EndDrawing();
     }
+
+    list_free(&assets);
 
     world_free(&world);
 
