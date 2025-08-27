@@ -1,11 +1,12 @@
 #include "raylib.h"
-#include "headers/raymath.h"
+#include "raymath.h"
+#include <stdio.h>
 
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 
 #define GUI_WINDOW_FILE_DIALOG_IMPLEMENTATION
-#include "headers/gui_window_file_dialog.h"
+#include "gui_window_file_dialog.h"
 
 #include "list.h"
 #include "utils.h"
@@ -19,14 +20,29 @@ int nearest_multiple(const float value, const int multiple)
     return nearest;
 }
 
-bool get_selected_filepath(GuiWindowFileDialogState* file_dialog_state, char* dest, const size_t dest_size)
+// TODO: figure out why raylibs isTextureReady is not found and remove this function
+bool texture_is_ready(const Texture* texture)
 {
-    if (!file_dialog_state)
-        return false;
+    return (texture->format > 0) && (texture->id > 0) && (texture->mipmaps > 0);
+}
 
-    const int written = snprintf(dest, dest_size, "%s/%s", file_dialog_state->dirPathText, file_dialog_state->fileNameText);
-    
-    return (0 < written) && (written < dest_size);
+int bound_value_to_interval(const int min, const int max, const int value)
+{
+    if (value > max)
+        return max;
+
+    else if (value < min)
+        return min;
+
+    else
+        return value;
+}
+
+void move_camera(Camera2D* camera)
+{
+    Vector2 delta = GetMouseDelta();
+    delta = Vector2Scale(delta, -1.0f / camera->zoom);
+    camera->target = Vector2Add(camera->target, delta);
 }
 
 // basic utils/misc
@@ -85,7 +101,7 @@ void asset_free(void* to_free)
         free(asset->path); asset->path = NULL;
     }
 
-    if (IsTextureReady(asset->texture))
+    if (texture_is_ready(&asset->texture))
         UnloadTexture(asset->texture);
     
     free(asset); asset = NULL;
@@ -93,9 +109,10 @@ void asset_free(void* to_free)
 
 bool asset_is_ready(Asset* asset)
 {
-    return (asset) && (valid_string(asset->path)) && (IsTextureReady(asset->texture));
+    return (asset) && (valid_string(asset->path)) && (texture_is_ready(&asset->texture));
 }
 
+// TODO: remove when replacing asset list with asset hashmap
 void asset_append(List* asset_list, const char* asset_path)
 {
     if (!asset_list || !valid_string(asset_path))
@@ -123,6 +140,54 @@ void asset_append(List* asset_list, const char* asset_path)
 
 typedef struct
 {
+    Camera2D camera;
+    int tile_size;
+} WorldSettings;
+
+#define INITIAL_TILE_SIZE 32
+
+WorldSettings world_settings_init()
+{
+    return (WorldSettings) {
+        .tile_size = INITIAL_TILE_SIZE,
+        .camera = (Camera2D) {
+            .offset = (Vector2){0,0},
+            .target = (Vector2){0,0},
+            .rotation = 0.0f,
+            .zoom = 1.0f
+        },
+    };
+}
+
+void adjust_tile_size(const float mouse_wheel_move, int* tile_size)
+{
+    if (!tile_size)
+        return;
+    
+    const int delta = 4;
+    const int min_tile_size = 8;
+    const int max_tile_size = 128;
+
+    // mouse_wheel_move is either -1, 0, or 1
+    (*tile_size) = bound_value_to_interval(min_tile_size, max_tile_size, (*tile_size) + (delta * mouse_wheel_move));
+}
+
+void handle_world_input(WorldSettings* settings)
+{
+    if (!settings)
+        return;
+
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+        move_camera(&settings->camera);
+    
+    const float mouse_wheel_move = GetMouseWheelMove();
+
+    if (mouse_wheel_move) 
+        adjust_tile_size(mouse_wheel_move, &settings->tile_size);    
+}
+
+typedef struct
+{
     List tiles[TILE_TYPE_N_ITEMS];
     Vector2 spawn_point;
 } World;
@@ -146,7 +211,7 @@ void world_free(World* world)
 }
 
 #define FPS 60
-#define ON_SCREEN_TILE_SIZE 32
+
 #define ASSET_TILE_SIZE 16
 
 void editor_init()
@@ -161,6 +226,8 @@ void editor_free()
     CloseWindow();
 }
 
+// ui 
+
 Rectangle get_padded_rectangle(const float padding, const Rectangle rect)
 {
     return (Rectangle) {
@@ -170,18 +237,6 @@ Rectangle get_padded_rectangle(const float padding, const Rectangle rect)
         .height = rect.height - (padding * 2),
     };
 }
-
-Rectangle get_gui_panel_content_bounds(const Rectangle gui_panel_bounds)
-{
-    return (Rectangle) {
-        .x = gui_panel_bounds.x,
-        .y = gui_panel_bounds.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT,
-        .width  = gui_panel_bounds.width,
-        .height = gui_panel_bounds.height,
-    };
-}
-
-// ui 
 
 typedef struct
 {
@@ -218,13 +273,6 @@ void draw_infinite_grid(const Rectangle bounds, const float v_dist, const float 
     
     for (float y = y0; y <= bounds.y + bounds.height; y += h_dist)
         DrawLine(bounds.x, y, bounds.x + bounds.width, y, BLACK);
-}
-
-void move_camera(Camera2D* camera)
-{
-    Vector2 delta = GetMouseDelta();
-    delta = Vector2Scale(delta, -1.0f / camera->zoom);
-    camera->target = Vector2Add(camera->target, delta);
 }
 
 void layout_dynamic_bar(const Rectangle container, const float padding, Rectangle* recs, const size_t nrecs)
@@ -280,38 +328,54 @@ void draw_side_bar(const Rectangle container, ScrollPanel* tile_scroll_panel)
     draw_tile_scroll_panel(tile_scroll_panel);
 }
 
-void draw_world(World* world, Camera2D* camera, const Rectangle container)
+void draw_world(const Rectangle container, const float padding, World* world, WorldSettings* settings)
 {
-    if (!world || !camera)
+    if (!world || !settings)
         return;
     
-    if ((container.width > 0) && (container.height > 0))
-        DrawRectangleLinesEx(container, 1, GRAY);
+    const Rectangle padded_container = get_padded_rectangle(padding, container);
 
-    BeginScissorMode(container.x, container.y, container.width, container.height);
-        BeginMode2D((*camera));
-            const Rectangle world_bounds = get_world_bounds(container, (*camera));
-            draw_infinite_grid(world_bounds, ON_SCREEN_TILE_SIZE, ON_SCREEN_TILE_SIZE);
+    if ((padded_container.width > 0) && (padded_container.height > 0)) 
+        DrawRectangleLinesEx(padded_container, 1, GRAY);
+
+    BeginScissorMode(padded_container.x, padded_container.y, padded_container.width, padded_container.height);
+        BeginMode2D(settings->camera);
+            const Rectangle world_bounds = get_world_bounds(padded_container, settings->camera);
+            draw_infinite_grid(world_bounds, settings->tile_size, settings->tile_size);
         EndMode2D();
     EndScissorMode();
 }
 
 // ui
 
+// GuiWindowFileDialogState stuff
+
 #define VALID_TEXTURE_EXT ".png"
+
+bool configure_selected_filepath(GuiWindowFileDialogState* file_dialog_state, char* dest, const size_t dest_size)
+{
+    if (!file_dialog_state)
+        return false;
+
+    const int written = snprintf(dest, dest_size, "%s/%s", file_dialog_state->dirPathText, file_dialog_state->fileNameText);
+    
+    return (0 < written) && (written < dest_size);
+}
 
 void handle_file_select(GuiWindowFileDialogState* file_dialog_state, List* asset_list)
 {
     if (!file_dialog_state || !asset_list) 
         return;
 
+    file_dialog_state->SelectFilePressed = false;
+    
     if (!IsFileExtension(file_dialog_state->fileNameText, VALID_TEXTURE_EXT)) {
         fprintf(stderr, "handle_file_select: \"%s\" is not a %s\n", file_dialog_state->fileNameText, VALID_TEXTURE_EXT);
         return;
     }
 
     char asset_path[1024] = {0};
-    if (!get_selected_filepath(file_dialog_state, asset_path, sizeof(asset_path))) {
+    if (!configure_selected_filepath(file_dialog_state, asset_path, sizeof(asset_path))) {
         fprintf(stderr, "handle_file_select: failed to configure asset path\n");
         return;
     }
@@ -321,8 +385,37 @@ void handle_file_select(GuiWindowFileDialogState* file_dialog_state, List* asset
     // TODO: parse texture into tiles based on user's asset size
 }
 
+// GuiWindowFileDialogState stuff
+
+// bounds update
+
+void update_ui_zones(Rectangle* top_bar, Rectangle* side_bar, Rectangle* world_border)
+{
+    if (!top_bar || !side_bar || !world_border)
+        return;
+
+    top_bar->width = GetScreenWidth();
+    side_bar->height = GetScreenHeight() - top_bar->height;
+    world_border->width = GetScreenWidth() - side_bar->width;
+    world_border->height = GetScreenHeight() - top_bar->height;
+}
+
+void update_scroll_panel(const Rectangle container, const float padding, ScrollPanel* scroll_panel)
+{
+    if (scroll_panel) {
+        scroll_panel->bounds = get_padded_rectangle(padding, container);
+        
+        // TODO: pass nelements scroll_panel contains to update the content rect
+        scroll_panel->content = scroll_panel->bounds; 
+    }
+}
+
+// bounds update
+
 int main()
 {
+    const int padding = 5;
+
     editor_init();
 
     GuiWindowFileDialogState file_dialog_state = InitGuiWindowFileDialog(GetWorkingDirectory());
@@ -330,77 +423,63 @@ int main()
     List assets = list_init();
 
     World world = world_init();
+    WorldSettings world_settings = world_settings_init();
 
-    const int padding = 5;
-
-    Rectangle TOP_BAR = {
+    Rectangle top_bar = {
         .x = 0,
         .y = 0,
         .width = GetScreenWidth(),
         .height = 35,
     };
     
-    Rectangle SIDE_BAR = {
+    Rectangle side_bar = {
         .x = 0,
-        .y = TOP_BAR.y + TOP_BAR.height,
+        .y = top_bar.y + top_bar.height,
         .width = 200,
-        .height = GetScreenHeight() - TOP_BAR.height,
+        .height = GetScreenHeight() - top_bar.height,
     };
 
     ScrollPanel tile_scroll_panel = {
-        .bounds = get_padded_rectangle(padding, SIDE_BAR),
+        .bounds = get_padded_rectangle(padding, side_bar),
         .content = tile_scroll_panel.bounds, // TODO: adjust the height based on the number of tiles that is loaded
         .scrollbar = (Vector2){0,0},
     };
 
-    Rectangle WORLD_BORDER = {
-        .x = SIDE_BAR.x + SIDE_BAR.width,
-        .y = TOP_BAR.y + TOP_BAR.height,
-        .width = GetScreenWidth() - SIDE_BAR.width,
-        .height = GetScreenHeight() - TOP_BAR.height,
-    };
-
-    Camera2D world_camera = {
-        .offset = (Vector2){0,0},
-        .target = (Vector2){0,0},
-        .rotation = 0.0f,
-        .zoom = 1.0f
+    Rectangle world_border = {
+        .x = side_bar.x + side_bar.width,
+        .y = top_bar.y + top_bar.height,
+        .width = GetScreenWidth() - side_bar.width,
+        .height = GetScreenHeight() - top_bar.height,
     };
     
     while (!WindowShouldClose())
     {
-        TOP_BAR.width = GetScreenWidth();
-        
-        SIDE_BAR.height = GetScreenHeight() - TOP_BAR.height;
-        tile_scroll_panel.bounds = get_padded_rectangle(padding, SIDE_BAR);
-        tile_scroll_panel.content = tile_scroll_panel.bounds;
-        
-        WORLD_BORDER.width = GetScreenWidth() - SIDE_BAR.width;
-        WORLD_BORDER.height = GetScreenHeight() - TOP_BAR.height;
+        update_ui_zones(&top_bar, &side_bar, &world_border);
+        update_scroll_panel(side_bar, padding, &tile_scroll_panel);
 
-        if (CheckCollisionPointRec(GetMousePosition(), WORLD_BORDER) && IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
-            move_camera(&world_camera);
+        if (CheckCollisionPointRec(GetMousePosition(), world_border) && !file_dialog_state.windowActive) 
+            handle_world_input(&world_settings);
 
-        if (file_dialog_state.SelectFilePressed) {
-            file_dialog_state.SelectFilePressed = false;
+        if (file_dialog_state.SelectFilePressed) 
             handle_file_select(&file_dialog_state, &assets);
-        }
 
         BeginDrawing();
 
             ClearBackground(WHITE);
 
-            if (file_dialog_state.windowActive) 
+            if (file_dialog_state.windowActive)
                 GuiLock();
             
-            draw_top_bar(TOP_BAR, padding, &file_dialog_state.windowActive);
-            draw_world(&world, &world_camera, get_padded_rectangle(padding, WORLD_BORDER));
-            draw_side_bar(SIDE_BAR, &tile_scroll_panel);
+            draw_top_bar(top_bar, padding, &file_dialog_state.windowActive);
+            draw_world(world_border, padding,&world, &world_settings);
+            draw_side_bar(side_bar, &tile_scroll_panel);
             
             GuiUnlock();
 
             GuiWindowFileDialog(&file_dialog_state);
 
+            DrawFPS(0, 0);
+            
         EndDrawing();
     }
 
