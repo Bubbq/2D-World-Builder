@@ -1,6 +1,6 @@
 all:
-	gcc editor.c animation.c entity.c tile.c worldbuilder.c timer.c -o run -lraylib -lm -Wall -fsanitize=address
+	gcc editor.c utils.c list.c asset_cache.c -I raylib/src/ raylib/src/libraylib.a -lm -Wall -fsanitize=address -o editor
 
 clean:
-	rm run
+	rm editor
 	clear

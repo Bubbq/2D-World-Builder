@@ -1,447 +1,425 @@
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "headers/raylib.h"
-#include "headers/raymath.h"
-#include "headers/tile.h"
-#include "headers/worldbuilder.h"
-
 #define RAYGUI_IMPLEMENTATION
-#include "headers/raygui.h"
+#include "raygui.h"
 
 #define GUI_WINDOW_FILE_DIALOG_IMPLEMENTATION
-#include "headers/gui_window_file_dialog.h"
+#include "gui_window_file_dialog.h"
 
-const int TILE_SIZE = 16;
-const int SCREEN_TILE_SIZE = 32;
+#include "list.h"
+
+// basic utils/misc
+
+int nearest_multiple(const float value, const int multiple)
+{
+    const int quotient = roundf(value / multiple);
+    const int nearest = quotient * multiple;
+    return nearest;
+}
+
+int bound_value_to_interval(const int min, const int max, const int value)
+{
+    if (value > max)
+        return max;
+
+    else if (value < min)
+        return min;
+
+    else
+        return value;
+}
+
+Vector2 vector2_scale(Vector2 vec, const float scale)
+{
+    return (Vector2) {
+        .x = vec.x * scale,
+        .y = vec.y * scale,
+    };
+}
+
+Vector2 vector2_add(Vector2 a, Vector2 b)
+{
+    return (Vector2) {
+        .x = a.x + b.x,
+        .y = a.y + b.y,
+    };
+}
+
+void move_camera(Camera2D* camera)
+{
+    Vector2 delta = GetMouseDelta();
+    delta = vector2_scale(delta, (-1.0f / camera->zoom));
+    camera->target = vector2_add(camera->target, delta);
+}
+
+// basic utils/misc
+
+typedef enum
+{
+	TILE_TYPE_WALL,
+	TILE_TYPE_FLOOR,
+	TILE_TYPE_DOOR,
+	TILE_TYPE_BUFF,
+	TILE_TYPE_INTERACTABLE,
+    TILE_TYPE_N_ITEMS,
+} TileType;
 
 typedef struct
 {
-    Tile current_tile;
-    TileList availible_tiles;
-    TileList* current_layer;
-    Texture2D current_texture;
-    TileType current_type;
-    Vector2 mouse_position;
-    char path[CHAR_LIMIT];
-    float animation_speed;
-    float nframes;
-} Editor;
+    Vector2 position;
+    int index;
+} AssetData;
 
-const int FPS = 60;
+typedef struct
+{
+    Vector2 world_position; 
+    AssetData asset_data;
+} Tile; 
 
-const int SCREEN_WIDTH = 992;
-const int SCREEN_HEIGHT = 992;
+typedef struct
+{
+    Camera2D camera;
+    int tile_size;
+} WorldSettings;
 
-const char* SPAWN_PATH = "spawn.txt";
+#define INITIAL_TILE_SIZE 32
 
-const Tile NULL_TILE = {(Vector2){}, (Vector2){}, (Texture2D){}, UNDF, "", false, (Animation){}};
-
-void draw_tile(Tile tile, int size)
-{ 
-    DrawTexturePro(tile.sprite, get_object_area(tile.position_in_sprite, TILE_SIZE), get_object_area(tile.screen_position, size), (Vector2){0,0}, 0, WHITE);
+WorldSettings world_settings_init()
+{
+    return (WorldSettings) {
+        .tile_size = INITIAL_TILE_SIZE,
+        .camera = (Camera2D) {
+            .offset = (Vector2){0,0},
+            .target = (Vector2){0,0},
+            .rotation = 0.0f,
+            .zoom = 1.0f
+        },
+    };
 }
 
-Vector2 get_gridded_mouse_position(Camera2D camera)
+void adjust_tile_size(const float mouse_wheel_move, int* tile_size)
 {
-    Vector2 pos = GetScreenToWorld2D(GetMousePosition(), camera);
-
-    pos.x = (((int)pos.x >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
-    pos.y = (((int)pos.y >> (int)log2(SCREEN_TILE_SIZE)) << (int)log2(SCREEN_TILE_SIZE));
+    if (!tile_size)
+        return;
     
-    return pos;
+    const int delta = 4;
+    const int min_tile_size = 8;
+    const int max_tile_size = 128;
+
+    // mouse_wheel_move is either -1, 0, or 1
+    (*tile_size) = bound_value_to_interval(min_tile_size, max_tile_size, (*tile_size) + (delta * mouse_wheel_move));
 }
 
-Editor create_editor()
+void handle_world_input(WorldSettings* settings)
 {
-    Editor editor;
+    if (!settings)
+        return;
 
-    editor.current_tile = NULL_TILE;
-    editor.availible_tiles = create_tilelist();
-    editor.current_layer = NULL;
-    editor.animation_speed = 0;
-    editor.nframes = 0;
+    if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+        move_camera(&settings->camera);
+    
+    const float mouse_wheel_move = GetMouseWheelMove();
 
-    return editor;
+    if (mouse_wheel_move) 
+        adjust_tile_size(mouse_wheel_move, &settings->tile_size);    
 }
 
-void read_image(TileList* avail_tiles, Texture2D texture, char* path)
+typedef struct
 {
-    Vector2 cp = {};
+    List tiles[TILE_TYPE_N_ITEMS];
+    Vector2 spawn_point;
+} World;
 
-    while(CheckCollisionPointRec(cp, (Rectangle) {0,0,texture.width, texture.height }))
-    {
-        Tile tile;
+World world_init()
+{
+    World world;
 
-        tile.position_in_sprite = cp;
-        tile.screen_position = (Vector2){};
-        tile.sprite = texture;
-        strcpy(tile.sprite_file_path, path);
-        
-        add_tile(avail_tiles, tile);
+    world.spawn_point = (Vector2){0};
 
-        if((cp.x += TILE_SIZE) == texture.width) 
-            cp = (Vector2){ 0, (cp.y + TILE_SIZE) };
+    for (int i = 0; i < TILE_TYPE_N_ITEMS; i++)
+        world.tiles[i] = list_init();
+
+    return world;
+}
+
+void world_free(World* world)
+{
+    for (int i = 0; i < TILE_TYPE_N_ITEMS; i++)
+        list_free(&world->tiles[i]);
+}
+
+#define FPS 60
+
+#define ASSET_TILE_SIZE 16
+
+void editor_init()
+{
+    SetTargetFPS(FPS);    
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(1000, 1000, "Editor");
+}
+
+void editor_free()
+{
+    CloseWindow();
+}
+
+// ui 
+
+Rectangle get_padded_rectangle(const float padding, const Rectangle rect)
+{
+    return (Rectangle) {
+        .x = rect.x + padding,
+        .y = rect.y + padding,
+        .width  = rect.width  - (padding * 2),
+        .height = rect.height - (padding * 2),
+    };
+}
+
+typedef struct
+{
+    Rectangle bounds;
+    Rectangle content;
+    Vector2 scrollbar;
+} ScrollPanel;
+
+Rectangle get_world_bounds(const Rectangle screen_bounds, const Camera2D camera)
+{
+    const Vector2 tr_screen = (Vector2) {
+        .x = screen_bounds.x,
+        .y = screen_bounds.y,
+    };
+
+    const Vector2 tr_world = GetScreenToWorld2D(tr_screen, camera);
+
+    return (Rectangle) {
+        .x = tr_world.x,
+        .y = tr_world.y,
+        .width = screen_bounds.width,
+        .height = screen_bounds.height,
+    };
+}
+
+void draw_infinite_grid(const Rectangle bounds, const float v_dist, const float h_dist)
+{
+    const float x0 = nearest_multiple(bounds.x, v_dist);
+
+    for (float x = x0; x <= bounds.x + bounds.width; x += v_dist)
+        DrawLine(x, bounds.y, x, bounds.y + bounds.height, BLACK);
+
+    const float y0 = nearest_multiple(bounds.y, h_dist);
+    
+    for (float y = y0; y <= bounds.y + bounds.height; y += h_dist)
+        DrawLine(bounds.x, y, bounds.x + bounds.width, y, BLACK);
+}
+
+void layout_dynamic_bar(const Rectangle container, const float padding, Rectangle* recs, const size_t nrecs)
+{
+    const float bar_w = container.width - (padding * (nrecs + 1));
+
+    const float widget_w = bar_w / nrecs;
+    const float widget_h = container.height - (padding * 2);
+
+    const float x0 = container.x + padding;
+    const float y0 = container.y + padding;
+
+    for (size_t i = 0; i < nrecs; i++) {
+        recs[i] = (Rectangle) {
+            .x = x0 + (i * widget_w) + (i > 0 ? padding : 0),
+            .y = y0,
+            .width = widget_w,
+            .height = widget_h,
+        };
     }
 }
 
-void load_button(GuiWindowFileDialogState* directory, World* world, TileList* avail_tiles, Tile* curr_tile, Texture2D* curr_texture, char* path)
+void draw_top_bar(const Rectangle container, const float padding, bool* load_window_active)
 {
-    if (GuiButton((Rectangle){ 70, 3, 65, 20 }, GuiIconText(ICON_FILE_OPEN, "LOAD"))) 
-        directory->windowActive = true;
+    const size_t widget_count = 2;
+    Rectangle widget_bounds[widget_count];
+    layout_dynamic_bar(container, padding, widget_bounds, widget_count);
+    
+    if (!load_window_active)
+        GuiSetState(STATE_DISABLED);
 
-    if(directory->SelectFilePressed)
-    {
-        *curr_tile = NULL_TILE;
+    if (GuiButton(widget_bounds[0], GuiIconText(ICON_FILE_OPEN, "LOAD")))
+        (*load_window_active) = true;
 
-		strcpy(path,TextFormat("%s" PATH_SEPERATOR "%s", directory->dirPathText,directory->fileNameText));
-        
-        // loading sprite
-        if (IsFileExtension(directory->fileNameText, ".png"))
-		{
-			*curr_texture = add_texture(&world->textures, path);
-            read_image(avail_tiles, *curr_texture, path);
-		}
+    GuiSetState(STATE_NORMAL);
 
-        // loading world
-        if (IsFileExtension(directory->fileNameText, ".txt"))
-        {
-            clear_world(world);
-            world->spawn = get_spawn_point(SPAWN_PATH);
-            load_world(world, path);
-        }
-
-        strcpy(path, "");
-        directory->SelectFilePressed = false;
-    }
+    if (GuiButton(widget_bounds[1], GuiIconText(ICON_FILE_SAVE, "SAVE")))
+        ;
 }
 
-void delete_world_button(World* world)
-{ 
-    if(GuiButton((Rectangle){ 137, 3, 65, 20 }, "DELETE")) 
-        clear_world(world); 
-}
-
-void focus_button(Camera2D* camera)
-{ 
-    if(GuiButton((Rectangle){ 204, 3, 50, 20 }, "FOCUS")) 
-        camera->target = (Vector2){}; 
-}
-
-void save_spawn_point(Vector2 spawn)
+void draw_tile_scroll_panel(ScrollPanel* scroll_panel)
 {
-    FILE* file = fopen(SPAWN_PATH, "w");
-    if(file == NULL)
-    {
-        printf("failed to save spawn point\n");
+    if (!scroll_panel)
+        return;
+
+    const char* panel_text = "Tiles";
+    const bool is_scrollbar_visible = true;
+    GuiScrollPanel(scroll_panel->bounds, panel_text, scroll_panel->content, &scroll_panel->scrollbar, NULL, is_scrollbar_visible);
+}
+
+void draw_side_bar(const Rectangle container, ScrollPanel* tile_scroll_panel)
+{
+    draw_tile_scroll_panel(tile_scroll_panel);
+}
+
+void draw_world(const Rectangle container, const float padding, World* world, WorldSettings* settings)
+{
+    if (!world || !settings)
+        return;
+    
+    const Rectangle padded_container = get_padded_rectangle(padding, container);
+
+    if ((padded_container.width > 0) && (padded_container.height > 0)) 
+        DrawRectangleLinesEx(padded_container, 1, GRAY);
+
+    BeginScissorMode(padded_container.x, padded_container.y, padded_container.width, padded_container.height);
+        BeginMode2D(settings->camera);
+            const Rectangle world_bounds = get_world_bounds(padded_container, settings->camera);
+            draw_infinite_grid(world_bounds, settings->tile_size, settings->tile_size);
+        EndMode2D();
+    EndScissorMode();
+}
+
+// ui
+
+// GuiWindowFileDialogState stuff
+
+#define VALID_TEXTURE_EXT ".png"
+
+bool configure_selected_filepath(GuiWindowFileDialogState* file_dialog_state, char* dest, const size_t dest_size)
+{
+    if (!file_dialog_state)
+        return false;
+
+    const int written = snprintf(dest, dest_size, "%s/%s", file_dialog_state->dirPathText, file_dialog_state->fileNameText);
+    
+    return (0 < written) && (written < dest_size);
+}
+
+void handle_file_select(GuiWindowFileDialogState* file_dialog_state)
+{
+    if (!file_dialog_state) 
+        return;
+
+    file_dialog_state->SelectFilePressed = false;
+    
+    if (!IsFileExtension(file_dialog_state->fileNameText, VALID_TEXTURE_EXT)) {
+        fprintf(stderr, "handle_file_select: \"%s\" is not a %s\n", file_dialog_state->fileNameText, VALID_TEXTURE_EXT);
         return;
     }
 
-    fprintf(file, "%.2f,%.2f\n", spawn.x, spawn.y);
-    fclose(file);
-}
-
-void save_button(World* world, Tile* curr_tile, bool* showInputTextBox, char* path)
-{
-    if (GuiButton((Rectangle){ 3, 3, 65, 20 },GuiIconText(ICON_FILE_SAVE, "SAVE"))) 
-        *showInputTextBox = true;
-
-    if(*showInputTextBox)
-    {
-        *curr_tile = NULL_TILE; 
-        int result = GuiTextInputBox((Rectangle){ 376, 436, 240, 140 },GuiIconText(ICON_FILE_SAVE, "Save file as..."),"file name:", "Ok;Cancel", path, 255, NULL);
-
-        // saving world 
-        if((result == 1) && (strlen(path) > 0))
-        {
-            save_spawn_point(world->spawn);
-            save_tilelist(&world->walls, path);
-            save_tilelist(&world->doors, path);
-            save_tilelist(&world->floors, path);
-            save_tilelist(&world->health_buffs, path);
-            save_tilelist(&world->damage_buffs, path);
-            save_tilelist(&world->interactables, path);
-        }
-
-        // reset flag upon saving and premature exit
-		if ((result == 0) || (result == 1) || (result == 2))
-		{
-			*showInputTextBox = false;
-			strcpy(path, "");
-		}
+    char asset_path[1024] = {0};
+    if (!configure_selected_filepath(file_dialog_state, asset_path, sizeof(asset_path))) {
+        fprintf(stderr, "handle_file_select: failed to configure asset path\n");
+        return;
     }
-}
 
-void clear_workspace_button(TileList* avail_tiles, Tile* curr_tile)
-{
-    if (GuiButton((Rectangle){ 235, 32, 24, 24 } ,GuiIconText(ICON_BIN, "")))
-	{
-		*curr_tile = NULL_TILE;
-        clear_tilelist(avail_tiles);
-	}
-}
-
-void tile_workspace(TileList* avail_tiles, Tile* curr_tile)
-{
-    const int TILES_PER_ROW = 8;
-    const int MAX_ROWS = 15;
-
-    const int NTILES = TILES_PER_ROW * MAX_ROWS;
-    int itr = avail_tiles->size > NTILES ? NTILES : avail_tiles->size;
-
-    GuiPanel((Rectangle){ 3, 32, 256, 504 }, "TILES");
-
-    clear_workspace_button(avail_tiles, curr_tile);
+    // TODO: add asset to asset_cache
     
-    Vector2 cp = { 3, 56 };
-
-    for(int i = 0; i < itr; i++, (cp.x += SCREEN_TILE_SIZE))
-    {
-        // next row transition
-        if(((i % TILES_PER_ROW) == 0) && (i != 0)) 
-            cp = (Vector2){ 3, (cp.y + SCREEN_TILE_SIZE) };
-
-        Tile tile = avail_tiles->list[i];
-        tile.screen_position = cp; 
-
-        draw_tile(tile, SCREEN_TILE_SIZE);
-
-        // choosing a tile 
-        if (CheckCollisionPointRec(GetMousePosition(),get_object_area(tile.screen_position, SCREEN_TILE_SIZE)))
-        {
-            if(IsMouseButtonPressed(MOUSE_LEFT_BUTTON)) 
-                *curr_tile = tile;
-
-            DrawRectangleLinesEx(get_object_area(tile.screen_position, SCREEN_TILE_SIZE), 2, BLUE);
-        }
-    }
-    
-    // highlight current tile
-    if(curr_tile->sprite.id > 0) 
-        DrawRectangleLinesEx(get_object_area(curr_tile->screen_position, SCREEN_TILE_SIZE), 2, GREEN);
+    // TODO: create tiles and add to tile palette
 }
 
-void select_layer_panel(World* world, TileType* curr_type, TileList** curr_layer)
-{
-    GuiPanel((Rectangle){ 829, 32, 160, 210 }, "LAYER TO EDIT");
-    GuiToggleGroup((Rectangle){ 845, 72, 128, 24 },"WALLS \n FLOORS \n DOORS \n BUFFS (HEALTH) \n BUFFS (DAMAGE) \n INTERACTABLES", curr_type);
+// GuiWindowFileDialogState stuff
 
-    // updating layer
-    switch (*curr_type)
-    {
-        case WALL: *curr_layer = &world->walls; break;
-        case DOOR: *curr_layer = &world->doors; break;
-        case FLOOR: *curr_layer = &world->floors; break;
-        case HEALTH_BUFF: *curr_layer = &world->health_buffs; break;
-        case DAMAGE_BUFF: *curr_layer = &world->damage_buffs; break;
-        case INTERACTABLE: *curr_layer = &world->interactables; break;
-        default:
-            break;
-    }
+// bounds update
+
+void update_ui_zones(Rectangle* top_bar, Rectangle* side_bar, Rectangle* world_border)
+{
+    if (!top_bar || !side_bar || !world_border)
+        return;
+
+    top_bar->width = GetScreenWidth();
+    side_bar->height = GetScreenHeight() - top_bar->height;
+    world_border->width = GetScreenWidth() - side_bar->width;
+    world_border->height = GetScreenHeight() - top_bar->height;
 }
 
-void select_spawn_point(Rectangle world_area, Vector2* spawn, Camera2D camera)
+void update_scroll_panel(const Rectangle container, const float padding, ScrollPanel* scroll_panel)
 {
-    Vector2 spawn_point = GetScreenToWorld2D(GetMousePosition(), camera); 
-    
-    if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(spawn_point, world_area)) 
-        *spawn = GetScreenToWorld2D(GetMousePosition(), camera); 
-}
-
-void label_world(World* world)
-{
-    label_tilelist(&world->walls,world->area, RED, SCREEN_TILE_SIZE, "W");
-    label_tilelist(&world->floors,world->area, ORANGE, SCREEN_TILE_SIZE, "F");
-    label_tilelist(&world->doors,world->area,YELLOW, SCREEN_TILE_SIZE, "D");
-    label_tilelist(&world->health_buffs, world->area, GREEN, SCREEN_TILE_SIZE, "HB");
-    label_tilelist(&world->damage_buffs, world->area,  BLUE, SCREEN_TILE_SIZE, "DB");
-    label_tilelist(&world->interactables, world->area, PURPLE, SCREEN_TILE_SIZE, "I");
-    DrawText("S", world->spawn.x, world->spawn.y, 5, PINK);
-}
-
-void edit_layer(Editor* editor, Rectangle world_area)
-{
-    // deletion
-    if(IsMouseButtonDown(MOUSE_RIGHT_BUTTON)) 
-    {
-        for(int i = 0; i < editor->current_layer->size; i++)
-        {
-            if(Vector2Equals(editor->mouse_position, editor->current_layer->list[i].screen_position)) 
-                delete_tile(editor->current_layer, i);
-        }
-    }
-
-    // creation
-    if((editor->current_tile.tile_type != UNDF) && IsMouseButtonDown(MOUSE_BUTTON_LEFT))
-    {
-        bool add = true;
+    if (scroll_panel) {
+        scroll_panel->bounds = get_padded_rectangle(padding, container);
         
-        // prevent adding tile on same space
-        for(int i = 0; (i < editor->current_layer->size) && (add); i++)
-        {
-            if(Vector2Equals(editor->mouse_position, editor->current_layer->list[i].screen_position)) 
-                add = false;
-        }
-
-        if(add)
-        {
-            bool animate = ((editor->animation_speed > 0) && (editor->nframes > 0));
-
-            Animation tile_animation;
-            tile_animation.nframes = editor->nframes;
-            tile_animation.fcount = 0;
-            tile_animation.fspeed = animate ? (FPS / editor->animation_speed) : 0;
-            tile_animation.xfposition = tile_animation.yfposition = 0;
-
-            Tile tile = editor->current_tile;
-            tile.screen_position = editor->mouse_position;    
-            tile.tile_type = editor->current_type;
-            tile.is_animated = animate;
-            tile.animtaion = tile_animation;
-            
-            add_tile(editor->current_layer, tile);
-        }
+        // TODO: pass nelements scroll_panel contains to update the content rect
+        scroll_panel->content = scroll_panel->bounds; 
     }
 }
 
-void edit_world_size_panel(float* world_width, float* world_height)
-{
-    GuiPanel((Rectangle){ 829 , 280, 160, 90 }, "WORLD SIZE");
-    
-    DrawText("WIDTH", 860, 315, 10, GRAY);
-    DrawText("HEIGHT", 860, 345, 10, GRAY);
-
-    // adj width
-    if(GuiButton((Rectangle){ 910, 310, 20, 20 }, "+")) 
-        *world_width += SCREEN_TILE_SIZE; 
-    if(GuiButton((Rectangle){ 933, 310, 20, 20 }, "-") && (*world_width > SCREEN_TILE_SIZE)) 
-        *world_width -= SCREEN_TILE_SIZE;
-
-    // adj height
-    if(GuiButton((Rectangle){ 910, 340, 20, 20 }, "+")) 
-        *world_height += SCREEN_TILE_SIZE; 
-    if(GuiButton((Rectangle){ 933, 340, 20, 20 }, "-") && (*world_height > SCREEN_TILE_SIZE))
-         *world_height -= SCREEN_TILE_SIZE;
-}
-
-void edit_tile_animation_panel(float* fps, float* nframes)
-{
-    char text[CHAR_LIMIT];
-
-    GuiPanel((Rectangle){3, 545, 256, 80}, "ANIMATION");
-
-    sprintf(text, "%.0f FPS", *fps);
-    GuiSliderBar((Rectangle){ 53, 580, 85, 10 }, "SPEED", text, fps, 0, 10);
-
-    sprintf(text, "%.0f", *nframes);
-    GuiSliderBar((Rectangle){ 90, 605, 85, 10 }, "# OF FRAMES", text, nframes, 0, 10);
-}
-
-void move_world(Camera2D* camera)
-{
-    if(IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
-    {
-        Vector2 delta = GetMouseDelta();
-        delta = Vector2Scale(delta, -1.0f / camera->zoom);
-        camera->target = Vector2Add(camera->target, delta);
-    }
-}
-
-void update_edit_state(EditState* state, bool is_window_active)
-{
-    if(IsKeyPressed(KEY_E)) 
-        *state = EDIT;
-
-    else if(IsKeyPressed(KEY_S)) 
-        *state = SPAWN;
-
-    else if(IsKeyPressed(KEY_F) || is_window_active) 
-        *state = FREE;
-}
-
-void display_current_edit_state(EditState state)
-{
-    char text[2];
-
-    switch (state)
-    {
-        case EDIT: sprintf(text, "E"); break;
-        case SPAWN: sprintf(text, "S"); break;
-        case FREE: sprintf(text, "F"); break;
-    }
-
-    DrawText(text, (SCREEN_WIDTH - 20), (SCREEN_HEIGHT - 20), 20, DARKGRAY);
-}
+// bounds update
 
 int main()
 {
-    World world = create_world();
-    world.area = (Rectangle){ 288, 32, 512, 512 };
+    const int padding = 5;
 
-    EditState state = FREE;
-    Editor editor = create_editor();
+    editor_init();
 
-    Camera2D camera;
-    camera.zoom = 1;
+    GuiWindowFileDialogState file_dialog_state = InitGuiWindowFileDialog(GetWorkingDirectory());
+
+    World world = world_init();
+    WorldSettings world_settings = world_settings_init();
+
+    Rectangle top_bar = {
+        .x = 0,
+        .y = 0,
+        .width = GetScreenWidth(),
+        .height = 35,
+    };
     
-    SetTargetFPS(FPS);
-    // SetTraceLogLevel(LOG_ERROR);
-	InitWindow(SCREEN_WIDTH,SCREEN_HEIGHT, "2D-Engine");
+    Rectangle side_bar = {
+        .x = 0,
+        .y = top_bar.y + top_bar.height,
+        .width = 200,
+        .height = GetScreenHeight() - top_bar.height,
+    };
 
-    bool showInputTextBox = false;
-    GuiWindowFileDialogState fileDialogState = InitGuiWindowFileDialog(GetWorkingDirectory());
+    ScrollPanel tile_scroll_panel = {
+        .bounds = get_padded_rectangle(padding, side_bar),
+        .content = tile_scroll_panel.bounds, // TODO: adjust the height based on the number of tiles that is loaded
+        .scrollbar = (Vector2){0,0},
+    };
+
+    Rectangle world_border = {
+        .x = side_bar.x + side_bar.width,
+        .y = top_bar.y + top_bar.height,
+        .width = GetScreenWidth() - side_bar.width,
+        .height = GetScreenHeight() - top_bar.height,
+    };
     
-    // preventing adding tiles when on other panels
-    const Rectangle DEAD_ZONE_1 = {3, 32, 256, 584};
-    const Rectangle DEAD_ZONE_2 = {829, 32, 160, 362};
-
-    while(!WindowShouldClose())
+    while (!WindowShouldClose())
     {
-        animate_world(&world);
-        editor.mouse_position = get_gridded_mouse_position(camera);
-        update_edit_state(&state, (showInputTextBox || fileDialogState.windowActive));
-        BeginDrawing();
-            ClearBackground(RAYWHITE);  
-            
-            switch (state)
-            {
-                case FREE: move_world(&camera); break;
-                case SPAWN: select_spawn_point(world.area, &world.spawn, camera); break;
-                case EDIT: 
-                    if((editor.current_layer != NULL) && CheckCollisionPointRec(editor.mouse_position, world.area) && (!CheckCollisionPointRec(GetMousePosition(), DEAD_ZONE_1) && !CheckCollisionPointRec(GetMousePosition(), DEAD_ZONE_2)))
-                    {
-                        BeginMode2D(camera);
-                            edit_layer(&editor, world.area);
-                            DrawRectangleLinesEx(get_object_area(editor.mouse_position, SCREEN_TILE_SIZE), 2, RED);
-                        EndMode2D();
-                    }
-                    break;
-                default:
-                    break;
-            }
-            
-            BeginMode2D(camera);
-                DrawRectangleLinesEx(world.area, 3, GRAY);
-                draw_world(&world, SCREEN_TILE_SIZE, TILE_SIZE);
-                label_world(&world);
-                DrawText("S", world.spawn.x, world.spawn.y, 5, PINK);
-            EndMode2D();
+        update_ui_zones(&top_bar, &side_bar, &world_border);
+        update_scroll_panel(side_bar, padding, &tile_scroll_panel);
 
-            display_current_edit_state(state);
-            tile_workspace(&editor.availible_tiles, &editor.current_tile);
-            select_layer_panel(&world, &editor.current_type, &editor.current_layer);
-            edit_world_size_panel(&world.area.width, &world.area.height);
-            edit_tile_animation_panel(&editor.animation_speed, &editor.nframes);
-            delete_world_button(&world);
-            focus_button(&camera);
-            save_button(&world, &editor.current_tile, &showInputTextBox, editor.path);
-            load_button(&fileDialogState, &world, &editor.availible_tiles, &editor.current_tile, &editor.current_texture, editor.path);
-            GuiWindowFileDialog(&fileDialogState);
+        if (CheckCollisionPointRec(GetMousePosition(), world_border) && !file_dialog_state.windowActive) 
+            handle_world_input(&world_settings);
+
+        if (file_dialog_state.SelectFilePressed) 
+            handle_file_select(&file_dialog_state);
+
+        BeginDrawing();
+
+            ClearBackground(WHITE);
+
+            if (file_dialog_state.windowActive)
+                GuiLock();
+            
+            draw_top_bar(top_bar, padding, &file_dialog_state.windowActive);
+            draw_world(world_border, padding,&world, &world_settings);
+            draw_side_bar(side_bar, &tile_scroll_panel);
+            
+            GuiUnlock();
+
+            GuiWindowFileDialog(&file_dialog_state);
+
+            DrawFPS(0, 0);
+            
         EndDrawing();
     }
-    
-    dealloc_world(&world);
-    unload_textures(&world.textures);
-    CloseWindow();    
+
+    world_free(&world);
+
+    editor_free();
+
     return 0;
 }
