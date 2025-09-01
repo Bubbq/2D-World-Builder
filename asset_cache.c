@@ -41,12 +41,7 @@ AssetEntry* asset_entry_init(const Texture texture, const unsigned long int id, 
         return NULL;
 
     entry->id = id;
-
-    entry->asset = (Asset){0};
-    if (!asset_init( &entry->asset, texture, path)) {
-        asset_free(&entry->asset);
-        free(entry); entry = NULL;
-    }
+    asset_init(&entry->asset, texture, path);
 
     return entry;
 }

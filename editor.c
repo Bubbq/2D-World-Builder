@@ -1,3 +1,7 @@
+#include "asset_cache.h"
+#include "raylib.h"
+#include "utils.h"
+#include <stdio.h>
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 
@@ -7,6 +11,21 @@
 #include "list.h"
 
 // basic utils/misc
+
+unsigned long int hash_string(const char* str)
+{
+    if (!valid_string(str))
+        return 0;
+
+    unsigned long int hash = 14695981039346656037ULL;
+    
+    while (*str) {
+        hash ^= (unsigned char)(*str++);
+        hash *= 1099511628211ULL;
+    }
+
+    return hash;
+}
 
 int nearest_multiple(const float value, const int multiple)
 {
@@ -298,17 +317,12 @@ bool configure_selected_filepath(GuiWindowFileDialogState* file_dialog_state, ch
     return (0 < written) && (written < dest_size);
 }
 
-void handle_file_select(GuiWindowFileDialogState* file_dialog_state)
+void handle_file_select(GuiWindowFileDialogState* file_dialog_state, AssetCache* cache)
 {
-    if (!file_dialog_state) 
+    if (!file_dialog_state || !cache) 
         return;
 
     file_dialog_state->SelectFilePressed = false;
-    
-    if (!IsFileExtension(file_dialog_state->fileNameText, VALID_TEXTURE_EXT)) {
-        fprintf(stderr, "handle_file_select: \"%s\" is not a %s\n", file_dialog_state->fileNameText, VALID_TEXTURE_EXT);
-        return;
-    }
 
     char asset_path[1024] = {0};
     if (!configure_selected_filepath(file_dialog_state, asset_path, sizeof(asset_path))) {
@@ -316,8 +330,32 @@ void handle_file_select(GuiWindowFileDialogState* file_dialog_state)
         return;
     }
 
-    // TODO: add asset to asset_cache
-    
+    if (!IsFileExtension(asset_path, VALID_TEXTURE_EXT)) {
+        fprintf(stderr, "handle_file_select: \"%s\" is not a %s\n", asset_path, VALID_TEXTURE_EXT);
+        return;
+    }
+
+    const unsigned long int hash = hash_string(asset_path);
+    if (asset_cache_find(cache, hash)) {
+        fprintf(stderr, "handle_file_select: the asset \"%s\" already exists in the cache\n", asset_path);
+        return;
+    }
+
+    const Texture asset = LoadTexture(asset_path);
+    if (!IsTextureReady(asset)) {
+        fprintf(stderr, "handle_file_select: failed to load %s\n", asset_path);
+        return;
+    }
+
+    AssetEntry* new_entry = asset_entry_init(asset, hash, asset_path);
+    if (!asset_entry_is_ready(new_entry)) {
+        fprintf(stderr, "handle_file_select: failed to create new AssetEntry\n");
+        asset_entry_free(new_entry);
+        return;
+    }
+
+    asset_cache_add(cache, new_entry);
+
     // TODO: create tiles and add to tile palette
 }
 
@@ -353,6 +391,8 @@ int main()
     const int padding = 5;
 
     editor_init();
+
+    AssetCache asset_cache = NULL;
 
     GuiWindowFileDialogState file_dialog_state = InitGuiWindowFileDialog(GetWorkingDirectory());
 
@@ -395,7 +435,7 @@ int main()
             handle_world_input(&world_settings);
 
         if (file_dialog_state.SelectFilePressed) 
-            handle_file_select(&file_dialog_state);
+            handle_file_select(&file_dialog_state, &asset_cache);
 
         BeginDrawing();
 
@@ -405,7 +445,7 @@ int main()
                 GuiLock();
             
             draw_top_bar(top_bar, padding, &file_dialog_state.windowActive);
-            draw_world(world_border, padding,&world, &world_settings);
+            draw_world(world_border, padding, &world, &world_settings);
             draw_side_bar(side_bar, &tile_scroll_panel);
             
             GuiUnlock();
@@ -416,6 +456,8 @@ int main()
             
         EndDrawing();
     }
+
+    asset_cache_free(&asset_cache);
 
     world_free(&world);
 
