@@ -208,3 +208,36 @@ void format_view_count(char* dest, const size_t dest_size)
     else if (view_count < 1e11) snprintf(dest, dest_size, "%.1fB views", (view_count / 1e9)); // 10,000,000,000  - 99,999,999,999
     else if (view_count < 1e12) snprintf(dest, dest_size, "%.0fB views", (view_count / 1e9)); // 100,000,000,000 - 999,999,999,999
 }
+
+bool is_file_extension(const char* filepath, const char* extension)
+{
+    if (!valid_string(filepath) || !valid_string(extension))
+        return false;
+
+    // edge cases
+        // extension is longer than the filepath
+    const size_t filepath_len = strlen(filepath);
+    const size_t extension_len = strlen(extension);
+
+    if (filepath_len <= extension_len)
+        return false;
+
+    const char* extension_start = &filepath[filepath_len - extension_len];
+
+    return (strcmp(extension_start, extension) == 0);
+}
+
+unsigned long int hash_string(const char* str)
+{
+    if (!valid_string(str))
+        return 0;
+
+    unsigned long int hash = 14695981039346656037ULL;
+    
+    while (*str) {
+        hash ^= (unsigned char)(*str++);
+        hash *= 1099511628211ULL;
+    }
+
+    return hash;
+}

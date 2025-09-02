@@ -2,46 +2,35 @@
 
 #include "utils.h"
 
-bool asset_init(Asset* dest, const Texture texture, const char* path)
+AssetEntry* asset_entry_init(const char* asset_path)
 {
-    if (!dest || !IsTextureReady(texture) || !valid_string(path))
-        return false;
-    
-    dest->texture = texture;
-    dest->path = strdup(path);
-    
-    return asset_is_ready(dest);
-}
-
-void asset_free(Asset* asset)
-{
-    if (!asset)
-        return;
-    
-    if (IsTextureReady(asset->texture))
-        UnloadTexture(asset->texture);
-    
-    if (asset->path) {
-        free(asset->path); asset->path = NULL;
-    }
-}
-
-bool asset_is_ready(const Asset* asset)
-{
-    return (asset) && (IsTextureReady(asset->texture)) && (valid_string(asset->path));
-}
-
-AssetEntry* asset_entry_init(const Texture texture, const unsigned long int id, const char* path)
-{
-    if (!IsTextureReady(texture) || !valid_string(path))
+    if (!valid_string(asset_path))
         return NULL;
+    
+    const unsigned long int hash_id = hash_string(asset_path);
+    if (hash_id == 0)
+        return NULL;
+
+    const Texture texture = LoadTexture(asset_path);
+    if (!IsTextureReady(texture))
+        return NULL;
+
+    char* path = strdup(asset_path);
+    if (!path) {
+        UnloadTexture(texture);
+        return NULL;
+    }
 
     AssetEntry* entry = malloc(sizeof(AssetEntry));
-    if (!entry) 
+    if (!entry) {
+        UnloadTexture(texture);
+        free(path); path = NULL;
         return NULL;
+    }
 
-    entry->id = id;
-    asset_init(&entry->asset, texture, path);
+    entry->path = path;
+    entry->id = hash_id;
+    entry->texture = texture;
 
     return entry;
 }
@@ -51,19 +40,26 @@ void asset_entry_free(AssetEntry* entry)
     if (!entry)
         return;
 
-    asset_free(&entry->asset);
+    entry->id = 0;
+
+    if (IsTextureReady(entry->texture))
+        UnloadTexture(entry->texture);
+
+    if (entry->path) {
+        free(entry->path); entry->path = NULL;
+    }
 
     free(entry); entry = NULL;
 }
 
 bool asset_entry_is_ready(const AssetEntry* entry)
 {
-    return (entry) && (entry->id != 0) && (asset_is_ready(&entry->asset));
+    return (entry) && (entry->id != 0) && (IsTextureReady(entry->texture)) && (valid_string(entry->path));
 }
 
 void asset_cache_add(AssetCache* cache, AssetEntry* entry)
 {
-    if (asset_entry_is_ready(entry) && !asset_cache_find(cache, entry->id))
+    if (asset_entry_is_ready(entry))
         HASH_ADD_INT((*cache), id, entry);
 }
 

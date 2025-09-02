@@ -15,5 +15,7 @@ bool valid_string(const char* string);
 bool connected_to_internet();
 char** text_split(const char* text, const char delim, int* count, char** copy_output);
 void format_view_count(char* dest, const size_t dest_size);
+bool is_file_extension(const char* filepath, const char* extension);
+unsigned long int hash_string(const char* str);
 
 #endif

@@ -6,26 +6,16 @@
 
 typedef struct
 {
-    Texture texture;
-    char* path;
-} Asset;
-
-// asset operations
-bool asset_init(Asset* dest, const Texture texture, const char* path);
-void asset_free(Asset* asset);
-bool asset_is_ready(const Asset* asset);
-
-typedef struct
-{
-    UT_hash_handle hh;
-    Asset asset;
-    unsigned long int id;
+    UT_hash_handle hh;    // for hashing operations, https://troydhanson.github.io/uthash/ for more information
+    Texture texture;      // image data stored in GPU
+    char* path;           // asset path, allocated
+    unsigned long int id; // the hashcode (generated from the path of the texture)
 } AssetEntry;
 
 typedef AssetEntry* AssetCache;
 
 // entry operations
-AssetEntry* asset_entry_init(const Texture texture, const unsigned long int id, const char* path);
+AssetEntry* asset_entry_init(const char* asset_path);
 void asset_entry_free(AssetEntry* entry);
 bool asset_entry_is_ready(const AssetEntry* entry);
 

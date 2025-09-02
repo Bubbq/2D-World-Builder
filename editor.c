@@ -1,4 +1,3 @@
-#include <stdio.h>
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 
@@ -11,24 +10,13 @@
 
 #define FPS 60
 #define INITIAL_TILE_SIZE 32
-#define VALID_TEXTURE_EXTENSION ".png"
+
+#define VALID_ASSET_EXTENSION ".png"
+
+#define SCROLLBAR_WIDTH 13
+#define TILE_PALETTE_TILES_PER_ROW 10
 
 // basic utils/misc
-
-unsigned long int hash_string(const char* str)
-{
-    if (!valid_string(str))
-        return 0;
-
-    unsigned long int hash = 14695981039346656037ULL;
-    
-    while (*str) {
-        hash ^= (unsigned char)(*str++);
-        hash *= 1099511628211ULL;
-    }
-
-    return hash;
-}
 
 int nearest_multiple(const float value, const int multiple)
 {
@@ -87,6 +75,7 @@ typedef enum
 typedef struct
 {
     Vector2 position;
+    Texture* texture;
     unsigned long int id;
 } AssetData;
 
@@ -200,12 +189,20 @@ Rectangle get_padded_rectangle(const float padding, const Rectangle rect)
 
 Rectangle get_panel_content_bounds(const Rectangle gui_panel_bounds)
 {
+    const float delta = RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT - 1;
+
     return (Rectangle) {
         .x = gui_panel_bounds.x,
-        .y = gui_panel_bounds.y + RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT,
+        .y = gui_panel_bounds.y + delta,
         .width  = gui_panel_bounds.width,
-        .height = gui_panel_bounds.height - RAYGUI_WINDOWBOX_STATUSBAR_HEIGHT,
+        .height = gui_panel_bounds.height - delta,
     };
+}
+
+// TODO: somehow out of sync with GuiScrollPanel's 'needsVerticalScrollbar' variable
+bool is_scrollbar_visible(const float content_height, const float bounds_height)
+{
+    return content_height > (bounds_height - (2 * GuiGetStyle(DEFAULT, BORDER_WIDTH)));
 }
 
 typedef struct
@@ -265,6 +262,12 @@ void layout_dynamic_bar(const Rectangle container, const float padding, Rectangl
     }
 }
 
+float get_tile_palette_size(const bool is_scrollbar_visible, const float container_width)
+{
+    const float availible_width = container_width - (is_scrollbar_visible ? SCROLLBAR_WIDTH : 0);
+    return availible_width / (TILE_PALETTE_TILES_PER_ROW * 1.0f);
+}
+
 void draw_top_bar(const Rectangle container, const float padding, bool* load_window_active)
 {
     const size_t widget_count = 2;
@@ -283,21 +286,58 @@ void draw_top_bar(const Rectangle container, const float padding, bool* load_win
         ;
 }
 
-void draw_tile_scroll_panel(ScrollPanel* scroll_panel)
+void draw_tile_scroll_panel(ScrollPanel* scroll_panel, List* tile_palette, const float sprite_size)
 {
-    if (!scroll_panel)
+    if (!scroll_panel || !tile_palette)
         return;
 
     const char* panel_text = "Tiles";
     const bool show_scrollbar = true;
     GuiScrollPanel(scroll_panel->bounds, panel_text, scroll_panel->content, &scroll_panel->scrollbar, NULL, show_scrollbar);
 
-    // TODO: draw the tiles in the scrollbar, adjusting the size based on some target tiles per row
+    const Rectangle tile_palette_container = get_panel_content_bounds(scroll_panel->bounds);
+    const float     tile_palette_size      = get_tile_palette_size(is_scrollbar_visible(scroll_panel->content.height, scroll_panel->bounds.height), tile_palette_container.width);
+
+    const Rectangle scissor_rect = get_padded_rectangle(1, tile_palette_container);
+
+    BeginScissorMode(scissor_rect.x, scissor_rect.y, scissor_rect.width, scissor_rect.height);
+    
+        Vector2 tile_position = {tile_palette_container.x, tile_palette_container.y};
+
+        int i = 0;
+        for (Node* node = tile_palette->head; node; node = node->next, i++, tile_position.x += tile_palette_size) {
+            if ((i != 0) && ((i % TILE_PALETTE_TILES_PER_ROW) == 0)) {
+                tile_position = (Vector2) {
+                    .x = tile_palette_container.x,
+                    .y = (tile_position.y + tile_palette_size)
+                };
+            }  
+            
+            AssetData* metadata = (AssetData*) node->content;
+
+            const Rectangle src_rect = {
+                .x = metadata->position.x,
+                .y = metadata->position.y,
+                .width = sprite_size,
+                .height = sprite_size,
+            };
+
+            const Rectangle dest_rect = {
+                .x = tile_position.x,
+                .y = tile_position.y + scroll_panel->scrollbar.y,
+                .width = tile_palette_size,
+                .height = tile_palette_size
+            };
+
+            DrawTexturePro((*metadata->texture), src_rect, dest_rect, (Vector2){0,0}, 0.0f, WHITE);
+        }
+
+    EndScissorMode();
 }
 
-void draw_side_bar(const Rectangle container, ScrollPanel* tile_scroll_panel)
+void draw_side_bar(const Rectangle container, ScrollPanel* tile_scroll_panel, List* tile_palette, const float sprite_size)
 {
-    draw_tile_scroll_panel(tile_scroll_panel);
+    draw_tile_scroll_panel(tile_scroll_panel, tile_palette, sprite_size);
 }
 
 void draw_world(const Rectangle container, const float padding, World* world, WorldSettings* settings)
@@ -324,7 +364,7 @@ void draw_world(const Rectangle container, const float padding, World* world, Wo
 
 bool configure_selected_filepath(GuiWindowFileDialogState* file_dialog_state, char* dest, const size_t dest_size)
 {
-    if (!file_dialog_state)
+    if (!file_dialog_state || !dest)
         return false;
 
     const int written = snprintf(dest, dest_size, "%s/%s", file_dialog_state->dirPathText, file_dialog_state->fileNameText);
@@ -332,33 +372,42 @@ bool configure_selected_filepath(GuiWindowFileDialogState* file_dialog_state, ch
     return (0 < written) && (written < dest_size);
 }
 
-void parse_asset_entry(const AssetEntry* entry, List* tile_palette, const float sprite_size)
+void update_tile_scroll_panel(const float ntiles, ScrollPanel* scroll_panel)
+{
+    if (!scroll_panel)
+        return;
+
+    const int nrows = ceil(ntiles / TILE_PALETTE_TILES_PER_ROW);
+    const float tile_palette_size = get_tile_palette_size(is_scrollbar_visible(scroll_panel->content.height, scroll_panel->bounds.height), scroll_panel->bounds.width);
+
+    scroll_panel->content.height = (nrows) * tile_palette_size;
+}
+
+void parse_asset_entry(AssetEntry* entry, List* tile_palette, const float sprite_size)
 {
     if (!asset_entry_is_ready(entry) || !tile_palette)
         return;
 
     const unsigned long int id = entry->id;
-    const Texture asset = entry->asset.texture;
 
-    for (float y = 0; y < asset.height; y += sprite_size) {
-        for (float x = 0; x < asset.width; x += sprite_size) {
+    Texture* texture = &entry->texture;
+
+    for (float y = 0; y < texture->height; y += sprite_size) {
+        for (float x = 0; x < texture->width; x += sprite_size) {
             AssetData* asset_data = malloc(sizeof(AssetData));
-            if (!asset_data) {
-                fprintf(stderr, "parse_asset_entry: failed to create AssetData object\n");
-                return;
+            if (asset_data) {
+                asset_data->id = id;
+                asset_data->texture = texture;
+                asset_data->position = (Vector2){x,y};
+                list_append(tile_palette, node_init(asset_data, sizeof(AssetData), asset_data_print, free));
             }
-
-            asset_data->id = id;
-            asset_data->position = (Vector2){x,y};
-            
-            list_append(tile_palette, node_init(asset_data, sizeof(AssetData), asset_data_print, free));
         }
     }
 }
 
-void handle_file_select(GuiWindowFileDialogState* file_dialog_state, AssetCache* cache, List* tile_palette, const float sprite_size)
+void handle_file_select(ScrollPanel* tile_scroll_panel, GuiWindowFileDialogState* file_dialog_state, AssetCache* cache, List* tile_palette, const float sprite_size)
 {
-    if (!file_dialog_state || !cache || !tile_palette) 
+    if (!tile_scroll_panel || !file_dialog_state || !cache || !tile_palette) 
         return;
 
     file_dialog_state->SelectFilePressed = false;
@@ -369,33 +418,28 @@ void handle_file_select(GuiWindowFileDialogState* file_dialog_state, AssetCache*
         return;
     }
 
-    if (!IsFileExtension(asset_path, VALID_TEXTURE_EXTENSION)) {
-        fprintf(stderr, "handle_file_select: \"%s\" is not a %s\n", asset_path, VALID_TEXTURE_EXTENSION);
+    if (!is_file_extension(asset_path, VALID_ASSET_EXTENSION)) {
+        fprintf(stderr, "handle_file_select: \"%s\" is not a %s\n", asset_path, VALID_ASSET_EXTENSION);
         return;
     }
 
-    const unsigned long int hash = hash_string(asset_path);
-    if (asset_cache_find(cache, hash)) {
-        fprintf(stderr, "handle_file_select: the asset \"%s\" already exists in the cache\n", asset_path);
+    AssetEntry* existing = asset_cache_find(cache, hash_string(asset_path));
+    if (existing) {
+        fprintf(stderr, "handle_file_select: the asset \"%s\" is already in the cache\n", asset_path);
         return;
     }
 
-    const Texture asset = LoadTexture(asset_path);
-    if (!IsTextureReady(asset)) {
-        fprintf(stderr, "handle_file_select: failed to load %s\n", asset_path);
-        return;
-    }
-
-    AssetEntry* new_entry = asset_entry_init(asset, hash, asset_path);
-    if (!asset_entry_is_ready(new_entry)) {
-        fprintf(stderr, "handle_file_select: failed to create new AssetEntry\n");
-        asset_entry_free(new_entry);
+    AssetEntry* new_entry = asset_entry_init(asset_path);
+    if (!new_entry) {
+        fprintf(stderr, "handle_file_select: failed to create new AssetEntry object\n");
         return;
     }
 
     asset_cache_add(cache, new_entry);
 
     parse_asset_entry(new_entry, tile_palette, sprite_size);
+    
+    update_tile_scroll_panel(tile_palette->count, tile_scroll_panel);
 }
 
 // GuiWindowFileDialogState stuff
@@ -413,23 +457,20 @@ void update_ui_zones(Rectangle* top_bar, Rectangle* side_bar, Rectangle* world_b
     world_border->height = GetScreenHeight() - top_bar->height;
 }
 
-void update_scroll_panel(const Rectangle container, const float padding, ScrollPanel* scroll_panel)
-{
-    if (scroll_panel) {
-        scroll_panel->bounds = get_padded_rectangle(padding, container);
-        
-        // TODO: pass nelements scroll_panel contains to update the content rect
-        scroll_panel->content = scroll_panel->bounds; 
-    }
-}
-
 // bounds update
+
+// TODO: handle highlighting hovering nodes and the selected one 
+// TODO: make PaletteManager struct to handle updates and input for the tile palette system?
+// TODO: make AssetManager to contain the cache and sprite size of the editing session?
+// TODO: better function to handle the updates in the scroll panels content rect and bound rect (scroll_panel_update)
+
+// BUGS
+    // width adjustment when drawing tiles not in sync with GuiScrollPanel scrollbar's visibility
 
 int main()
 {
     const int padding = 5;
     
-    // TODO: make customizeable
     float sprite_size = 16.0f;
 
     editor_init();
@@ -453,13 +494,13 @@ int main()
     Rectangle side_bar = {
         .x = 0,
         .y = top_bar.y + top_bar.height,
-        .width = 200,
+        .width = GetScreenWidth() * 0.30f,
         .height = GetScreenHeight() - top_bar.height,
     };
 
     ScrollPanel tile_scroll_panel = {
         .bounds = get_padded_rectangle(padding, side_bar),
-        .content = tile_scroll_panel.bounds, // TODO: adjust the height based on the number of tiles that is loaded
+        .content = tile_scroll_panel.bounds, 
         .scrollbar = (Vector2){0,0},
     };
 
@@ -473,13 +514,14 @@ int main()
     while (!WindowShouldClose())
     {
         update_ui_zones(&top_bar, &side_bar, &world_border);
-        update_scroll_panel(side_bar, padding, &tile_scroll_panel);
+
+        tile_scroll_panel.bounds = get_padded_rectangle(padding, side_bar);
 
         if (CheckCollisionPointRec(GetMousePosition(), world_border) && !file_dialog_state.windowActive) 
             handle_world_input(&world_settings);
 
         if (file_dialog_state.SelectFilePressed) 
-            handle_file_select(&file_dialog_state, &asset_cache, &tile_palette, sprite_size);
+            handle_file_select(&tile_scroll_panel, &file_dialog_state, &asset_cache, &tile_palette, sprite_size);
 
         BeginDrawing();
 
@@ -490,7 +532,7 @@ int main()
             
             draw_top_bar(top_bar, padding, &file_dialog_state.windowActive);
             draw_world(world_border, padding, &world, &world_settings);
-            draw_side_bar(side_bar, &tile_scroll_panel);
+            draw_side_bar(side_bar, &tile_scroll_panel, &tile_palette, sprite_size);
             
             GuiUnlock();
 
